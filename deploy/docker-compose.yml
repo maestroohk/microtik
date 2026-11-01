@@ -32,6 +32,7 @@ services:
         condition: service_healthy
     environment:
       KIBO_RADIUS_DB_PASSWORD: ${KIBO_RADIUS_DB_PASSWORD:?set KIBO_RADIUS_DB_PASSWORD in deploy/.env}
+      KIBO_RADIUS_CLIENT_NETWORK: 10.247.0.0/24
       KIBO_RADIUS_DEBUG: ${KIBO_RADIUS_DEBUG:-}
     volumes:
       - ./freeradius:/kibo:ro

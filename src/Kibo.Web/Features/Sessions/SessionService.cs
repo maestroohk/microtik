@@ -15,6 +15,7 @@ public class SessionService(
     CurrentUser currentUser,
     RouterOsClient routerClient,
     RouterHealthChecker healthChecker,
+    DynamicAuthorizationClient dynamicAuthorization,
     AuditLogger audit,
     ILogger<SessionService> logger)
 {
@@ -68,10 +69,31 @@ public class SessionService(
         return OperationResult<int>.Ok(count);
     }
 
-    public async Task<int> DisconnectUserAsync(Guid tenantId, string username, string reason, CancellationToken ct)
+    public async Task<int> ChangeRateAsync(Guid tenantId, string username, string rateLimit, CancellationToken ct)
+    {
+        var routers = await RoutersWithOpenSessionsAsync(tenantId, username, ct);
+        var changed = 0;
+        foreach (var router in routers)
+        {
+            var result = await dynamicAuthorization.ChangeRateAsync(router, username, rateLimit, ct);
+            if (result == DynamicAuthorizationResult.Acknowledged)
+            {
+                changed++;
+                continue;
+            }
+
+            logger.LogInformation("CoA to {Router} for {Username} was {Result}; disconnecting instead", router.Name, username, result);
+            await DisconnectUserAsync(tenantId, username, "Fair-usage threshold reached", ct);
+            return changed;
+        }
+
+        return changed;
+    }
+
+    private async Task<List<Router>> RoutersWithOpenSessionsAsync(Guid tenantId, string username, CancellationToken ct)
     {
         await using var db = kiboDb.ForSystem();
-        var routers = await (
+        return await (
                 from session in db.RadiusAccounting
                 join nas in db.RadiusNas on session.NasIpAddress equals nas.NasName
                 join router in db.Routers on nas.RouterId equals router.Id
@@ -79,7 +101,11 @@ public class SessionService(
                 select router)
             .Distinct()
             .ToListAsync(ct);
+    }
 
+    public async Task<int> DisconnectUserAsync(Guid tenantId, string username, string reason, CancellationToken ct)
+    {
+        var routers = await RoutersWithOpenSessionsAsync(tenantId, username, ct);
         var removed = 0;
         var failures = new List<string>();
         foreach (var router in routers)
@@ -103,7 +129,15 @@ public class SessionService(
             }
             catch (RouterOsException ex)
             {
-                failures.Add($"{router.Name}: {ex.Message}");
+                var fallback = await dynamicAuthorization.DisconnectAsync(router, username, ct);
+                if (fallback == DynamicAuthorizationResult.Acknowledged)
+                {
+                    removed++;
+                }
+                else
+                {
+                    failures.Add($"{router.Name}: {ex.Message}; RADIUS disconnect {fallback.ToString().ToLowerInvariant()}");
+                }
             }
         }
 

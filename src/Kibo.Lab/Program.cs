@@ -1,6 +1,7 @@
 using Kibo.Lab;
 using Kibo.Lab.MobileMoney;
 using Kibo.Lab.Radius;
+using Kibo.Radius;
 using Kibo.Lab.Router;
 
 var builder = WebApplication.CreateBuilder(args);

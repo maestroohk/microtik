@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Sockets;
 using Kibo.Lab.Radius;
+using Kibo.Radius;
 using Microsoft.Extensions.Options;
 
 namespace Kibo.Lab.Router;
@@ -46,9 +47,12 @@ public class DisconnectListener(SimulatedRouter router, IOptions<LabOptions> opt
 
         var username = request.Find(RadiusAttr.UserName)?.AsString();
         var response = new RadiusPacket { Identifier = request.Identifier };
+        var rate = request.FindVendor(RadiusAttr.MikrotikVendorId, RadiusAttr.MikrotikRateLimit)?.AsString();
         if (request.Code == RadiusCode.CoaRequest)
         {
-            response.Code = RadiusCode.CoaNak;
+            response.Code = username != null && rate != null && router.ChangeRate(username, rate) > 0
+                ? RadiusCode.CoaAck
+                : RadiusCode.CoaNak;
         }
         else if (username != null && await router.RemoveUserAsync(username, "Admin-Reset", ct) > 0)
         {

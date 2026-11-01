@@ -92,7 +92,7 @@ BEGIN
             END IF;
             v_rate := a.throttled_rate_limit;
             v_total := NULL;
-        ELSE
+        ELSIF a.throttled_rate_limit IS NULL THEN
             v_total := a.data_limit_bytes - v_used_bytes;
         END IF;
     END IF;

@@ -46,10 +46,14 @@ All ports bind to 127.0.0.1. The lab uses its own Docker network and does not to
 | Payments list, refunds (ledger + access cancellation) | Done | Browser |
 | PPPoE: accounts, static IP, cash sale, service-type separation, renewal requests | Done | PPPoE dial in simulator; voucher refused on PPPoE |
 | Reports (channel/package/site/agent, daily table, CSV), dashboard, audit logs, staff management | Done | Browser |
+| RADIUS CoA (fair-use speed change without disconnect) and Disconnect-Request fallback | Done | Live session dropped from 1024k/2048k to 128k/256k by CoA |
+| Security headers/CSP, secure cookies, rate limits, health check, forwarded headers | Done | Build + browser |
+| Production compose (Caddy TLS, WireGuard hub, web image) | Written | **Not yet built or run** |
 
-Automated tests: **45 passing** (`dotnet test`): business rules, phone/duration parsing, CHAP hashing, login-URL
+Automated tests: **49 passing** (`dotnet test`): business rules, phone/duration parsing, CHAP hashing, login-URL
 allow-list, tenant isolation, RADIUS SQL decisions (tenant scoping, remaining bytes/time, FUP, expiry,
-suspension), payment idempotency under concurrency, amount mismatch, append-only ledger.
+suspension, fair-use without byte cap), payment idempotency under concurrency, amount mismatch, append-only ledger,
+RADIUS codec (CoA vendor attributes, authenticators, PAP encryption).
 
 ## Known limitations
 
@@ -57,7 +61,10 @@ suspension), payment idempotency under concurrency, amount mismatch, append-only
   CHR in Hyper-V/VirtualBox (free licence, 1 Mbps) and repeat the lab script.
 * Real MTN MoMo / Airtel Money adapters are not written (only `sim-momo`). Refunds are recorded, not sent to a
   provider.
-* Mid-session speed/limit changes use disconnect + re-auth; RADIUS CoA is not implemented yet.
+* Fair-use is a soft threshold: detection waits for the next interim update (60 s) plus the 15 s worker, so a
+  fast customer can exceed the threshold before being slowed. Hard caps (no fair-use speed) are enforced by the
+  router itself via `Mikrotik-Total-Limit`.
+* The production compose file and web Dockerfile are untested.
 * `login.html` passes the CHAP challenge in the query string; confirm against real RouterOS escaping.
 * Per-subscription usage queries run every 15 s; for thousands of concurrent subscribers this should become a
   set-based query plus an index on `(username, acctstarttime)`.
@@ -69,6 +76,6 @@ suspension), payment idempotency under concurrency, amount mismatch, append-only
 
 1. CHR lab on Hyper-V with an isolated internal switch; verify hotspot redirect, CHAP login, limits, CoA port.
 2. MTN MoMo Collections and Airtel Money adapters behind `IPaymentProvider` (sandbox only).
-3. RADIUS CoA (rate change for FUP without disconnect).
-4. Production compose (app container, TLS reverse proxy, WireGuard hub), backups, metrics.
+3. Build and smoke-test the production compose; add backups and metrics.
+4. Set-based usage aggregation for large subscriber counts.
 5. Opt-in automated provisioning per router, tested against CHR first.

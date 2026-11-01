@@ -36,4 +36,8 @@
     <EmbeddedResource Include="Data\Sql\*.sql" />
   </ItemGroup>
 
+  <ItemGroup>
+    <ProjectReference Include="..\Kibo.Radius\Kibo.Radius.csproj" />
+  </ItemGroup>
+
 </Project>

@@ -114,10 +114,23 @@ A purchase while another package is current is **queued** (`Scheduled`) and beco
   expiry, voucher redemption, stale sessions), `JobWorker` (durable `background_jobs` table, `SKIP LOCKED`,
   bounded retries with backoff, deduplication key). All survive restarts because state is in the database.
 
+### Mid-session changes
+`DynamicAuthorizationClient` sends RFC 5176 CoA and Disconnect requests to the router's tunnel address and stored
+CoA port, signed with that router's RADIUS secret. Fair-use throttling uses CoA (`Mikrotik-Rate-Limit`); if the
+router does not acknowledge, Kibo disconnects so the next login gets the throttled rate. Disconnects use the
+RouterOS API first and fall back to RADIUS Disconnect-Request. Packages with a fair-use speed are not sent a
+`Mikrotik-Total-Limit`, otherwise the router would cut the customer off instead of slowing them down.
+
+## Deployment
+`deploy/docker-compose.prod.yml`: PostgreSQL, FreeRADIUS (sharing the WireGuard container's network namespace, so
+RADIUS is only reachable through router tunnels), the web app image (`src/Kibo.Web/Dockerfile`, Tailwind built
+in a Node stage), and Caddy for automatic TLS. Data-protection keys live in a volume; losing them makes stored
+router API passwords unreadable (re-enter them). Back up PostgreSQL daily (`pg_dump`); it holds everything.
+Set `KIBO_TUNNEL_SUBNET` so FreeRADIUS only accepts dynamic clients from tunnel addresses.
+
 ## Configuration
 Non-secret settings: `appsettings*.json`. Secrets: `dotnet user-secrets` (development) or environment variables.
 Lab container secrets: `deploy/.env` (git-ignored; template in `deploy/.env.example`).
 
 ## Known gaps (tracked in PROGRESS.md)
-Real mobile money adapters, RADIUS CoA for in-session speed changes, automated provisioning, CHR verification,
-PPPoE simulator coverage.
+Real mobile money adapters, automated provisioning, CHR verification, an untested production compose.

@@ -88,7 +88,11 @@
                         <div class="num mt-1 font-semibold">@Format.Bytes(current.UsedBytes)@(current.DataQuotaBytes == null ? "" : $" of {Format.Bytes(current.DataQuotaBytes.Value)}")</div>
                         @if (current.DataQuotaBytes != null)
                         {
-                            <div class="mt-2 h-1.5 rounded-full bg-surface-2"><div class="h-1.5 rounded-full bg-primary" style="width: @(Math.Min(100, current.UsedBytes * 100 / Math.Max(1, current.DataQuotaBytes.Value)))%"></div></div>
+                            <div class="mt-2 h-1.5 rounded-full bg-surface-2"><div class="h-1.5 rounded-full @(current.ThrottledAt == null ? "bg-primary" : "bg-warn")" style="width: @(Math.Min(100, current.UsedBytes * 100 / Math.Max(1, current.DataQuotaBytes.Value)))%"></div></div>
+                            @if (current.ThrottledAt != null)
+                            {
+                                <div class="mt-2"><span class="badge badge-warn">Fair-use speed since @Format.Local(current.ThrottledAt)</span></div>
+                            }
                         }
                     </div>
                 </div>

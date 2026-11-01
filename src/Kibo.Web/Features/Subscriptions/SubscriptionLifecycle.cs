@@ -89,9 +89,10 @@ public class SubscriptionLifecycle(KiboDb kiboDb, TimeProvider clock, ILogger<Su
                  usage.Bytes >= subscription.DataQuotaBytes && Entitlements.HasThrottleFallback(subscription))
         {
             subscription.ThrottledAt = now;
-            JobQueue.Enqueue(db, JobKinds.DisconnectUser,
-                new DisconnectUserPayload(subscription.TenantId, account.Username, "Fair-usage threshold reached"),
-                now, subscription.TenantId);
+            var throttledRate = Entitlements.RateLimit(subscription.ThrottledUploadKbps ?? subscription.UploadKbps,
+                subscription.ThrottledDownloadKbps ?? subscription.DownloadKbps);
+            JobQueue.Enqueue(db, JobKinds.ThrottleUser,
+                new ThrottleUserPayload(subscription.TenantId, account.Username, throttledRate), now, subscription.TenantId);
         }
 
         if (subscription.Source == SubscriptionSource.Voucher && previousStatus != subscription.Status)

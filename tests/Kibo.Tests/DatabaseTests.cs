@@ -83,6 +83,10 @@ public class DatabaseTests(TestDatabase database)
         var since = DateTime.UtcNow.AddMinutes(-30);
         await AddAccessAsync(t.Id, "FUP00001", expiresAt: DateTime.UtcNow.AddDays(1), dataLimit: 1000, countingSince: since,
             throttled: "256k/512k");
+        var underQuota = await EvaluateAsync("FUP00001", "10.99.0.8");
+        Assert.Null(underQuota!.TotalLimit);
+        Assert.Equal("512k/1024k", underQuota.RateLimit);
+
         await AddSessionAsync("FUP00001", "10.99.0.8", since.AddMinutes(1), 5000);
 
         var result = await EvaluateAsync("FUP00001", "10.99.0.8");

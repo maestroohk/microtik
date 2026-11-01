@@ -19,6 +19,7 @@ using Kibo.Web.Security;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Components.Authorization;
 using Microsoft.AspNetCore.DataProtection;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using System.Threading.RateLimiting;
@@ -47,10 +48,26 @@ builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationSc
         options.Cookie.Name = "kibo.auth";
         options.Cookie.HttpOnly = true;
         options.Cookie.SameSite = SameSiteMode.Lax;
+        options.Cookie.SecurePolicy = builder.Environment.IsDevelopment()
+            ? CookieSecurePolicy.SameAsRequest
+            : CookieSecurePolicy.Always;
         options.ExpireTimeSpan = TimeSpan.FromHours(12);
         options.SlidingExpiration = true;
     });
 builder.Services.AddAuthorization();
+builder.Services.AddAntiforgery(options => options.Cookie.SecurePolicy = builder.Environment.IsDevelopment()
+    ? CookieSecurePolicy.SameAsRequest
+    : CookieSecurePolicy.Always);
+builder.Services.Configure<ForwardedHeadersOptions>(options =>
+{
+    options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
+    options.KnownIPNetworks.Clear();
+    options.KnownProxies.Clear();
+    foreach (var proxy in builder.Configuration.GetSection("Kibo:TrustedProxies").Get<string[]>() ?? [])
+    {
+        options.KnownProxies.Add(System.Net.IPAddress.Parse(proxy));
+    }
+});
 builder.Services.AddCascadingAuthenticationState();
 builder.Services.AddHttpContextAccessor();
 
@@ -90,6 +107,7 @@ builder.Services.AddSingleton<RouterLiveUpdates>();
 builder.Services.AddScoped<RouterOsClient>();
 builder.Services.AddScoped<PackageService>();
 builder.Services.AddScoped<SessionService>();
+builder.Services.AddSingleton<DynamicAuthorizationClient>();
 builder.Services.AddScoped<SubscriptionLifecycle>();
 builder.Services.AddScoped<PaymentService>();
 builder.Services.AddScoped<PortalService>();
@@ -146,6 +164,9 @@ builder.Services.AddRazorComponents()
 
 var app = builder.Build();
 
+app.UseForwardedHeaders();
+app.UseSecurityHeaders();
+
 if (!app.Environment.IsDevelopment())
 {
     app.UseExceptionHandler("/Error", createScopeForErrors: true);
@@ -162,6 +183,11 @@ app.MapStaticAssets();
 app.MapAuthEndpoints();
 app.MapPaymentEndpoints();
 app.MapPortalEndpoints();
+app.MapGet("/healthz", async (KiboDb kiboDb) =>
+{
+    await using var db = kiboDb.ForSystem();
+    return await db.Database.CanConnectAsync() ? Results.Ok(new { status = "ok" }) : Results.StatusCode(503);
+}).AllowAnonymous();
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
 

@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Sockets;
 using System.Security.Cryptography;
+using Kibo.Radius;
 using Microsoft.Extensions.Options;
 
 namespace Kibo.Lab.Radius;
@@ -28,7 +29,7 @@ public class RadiusClient(IOptions<LabOptions> options, ILogger<RadiusClient> lo
         request.Identifier = NewIdentifier();
         if (isAccounting)
         {
-            request.SignAccounting(Settings.RadiusSecret);
+            request.SignRequestAuthenticator(Settings.RadiusSecret);
         }
         else
         {

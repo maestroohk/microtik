@@ -356,6 +356,11 @@
     text-align: right;
   }
 
+  .table td.num,
+  .table td .num {
+    white-space: nowrap;
+  }
+
   .nav-link {
     display: flex;
     align-items: center;

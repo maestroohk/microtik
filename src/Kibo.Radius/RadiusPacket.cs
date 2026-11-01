@@ -3,7 +3,7 @@ using System.Net;
 using System.Security.Cryptography;
 using System.Text;
 
-namespace Kibo.Lab.Radius;
+namespace Kibo.Radius;
 
 public static class RadiusCode
 {
@@ -87,6 +87,17 @@ public class RadiusPacket
     }
 
     public RadiusPacket Add(byte type, IPAddress address) => Add(type, address.GetAddressBytes());
+
+    public RadiusPacket AddVendor(uint vendorId, byte vendorType, string value)
+    {
+        var data = Encoding.UTF8.GetBytes(value);
+        var payload = new byte[6 + data.Length];
+        BinaryPrimitives.WriteUInt32BigEndian(payload, vendorId);
+        payload[4] = vendorType;
+        payload[5] = (byte)(data.Length + 2);
+        data.CopyTo(payload, 6);
+        return Add(RadiusAttr.VendorSpecific, payload);
+    }
 
     public RadiusAttribute? Find(byte type) => Attributes.FirstOrDefault(a => a.Type == type && a.VendorId == 0);
 
@@ -198,7 +209,7 @@ public class RadiusPacket
         Attributes[^1] = new RadiusAttribute(RadiusAttr.MessageAuthenticator, hmac);
     }
 
-    public void SignAccounting(string secret)
+    public void SignRequestAuthenticator(string secret)
     {
         Authenticator = new byte[16];
         Authenticator = MD5.HashData([.. Encode(), .. Encoding.UTF8.GetBytes(secret)]);

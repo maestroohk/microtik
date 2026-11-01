@@ -109,6 +109,11 @@ public class JobWorker(IServiceScopeFactory scopeFactory, TimeProvider clock, IL
                 var verify = JsonSerializer.Deserialize<VerifyPaymentPayload>(job.Payload)!;
                 await services.GetRequiredService<PaymentService>().VerifyAndSettleAsync(verify.PaymentId, ct);
                 break;
+            case JobKinds.ThrottleUser:
+                var throttle = JsonSerializer.Deserialize<ThrottleUserPayload>(job.Payload)!;
+                await services.GetRequiredService<SessionService>()
+                    .ChangeRateAsync(throttle.TenantId, throttle.Username, throttle.RateLimit, ct);
+                break;
             default:
                 throw new InvalidOperationException($"Unknown job kind {job.Kind}.");
         }

@@ -9,11 +9,14 @@ public static class JobKinds
 {
     public const string DisconnectUser = "disconnect-user";
     public const string VerifyPayment = "verify-payment";
+    public const string ThrottleUser = "throttle-user";
 }
 
 public record DisconnectUserPayload(Guid TenantId, string Username, string Reason);
 
 public record VerifyPaymentPayload(Guid PaymentId);
+
+public record ThrottleUserPayload(Guid TenantId, string Username, string RateLimit);
 
 public static class JobQueue
 {

@@ -1,0 +1,93 @@
+name: kibo
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: kibo
+      POSTGRES_USER: kibo
+      POSTGRES_PASSWORD: ${KIBO_DB_PASSWORD:?required}
+      KIBO_RADIUS_DB_PASSWORD: ${KIBO_RADIUS_DB_PASSWORD:?required}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./postgres/init:/docker-entrypoint-initdb.d:ro
+    networks: [backend]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U kibo -d kibo"]
+      interval: 10s
+      retries: 10
+
+  freeradius:
+    image: freeradius/freeradius-server:3.2.7
+    restart: unless-stopped
+    entrypoint: ["/bin/sh", "/kibo/start.sh"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      KIBO_RADIUS_DB_PASSWORD: ${KIBO_RADIUS_DB_PASSWORD:?required}
+      KIBO_RADIUS_CLIENT_NETWORK: ${KIBO_TUNNEL_SUBNET:?required}
+    volumes:
+      - ./freeradius:/kibo:ro
+    # Routers reach RADIUS only through the WireGuard hub; never publish 1812/1813 to the internet.
+    network_mode: "service:wireguard"
+
+  wireguard:
+    image: lscr.io/linuxserver/wireguard:1.0.20250521
+    restart: unless-stopped
+    cap_add: [NET_ADMIN]
+    environment:
+      PUID: "1000"
+      PGID: "1000"
+      TZ: Africa/Kampala
+    volumes:
+      - ./wireguard:/config
+    ports:
+      - "51820:51820/udp"
+    networks: [backend]
+
+  web:
+    build:
+      context: ..
+      dockerfile: src/Kibo.Web/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ConnectionStrings__Kibo: Host=postgres;Database=kibo;Username=kibo;Password=${KIBO_DB_PASSWORD}
+      Payments__SimulatedMobileMoney__BaseUrl: ${KIBO_MOMO_BASE_URL:-}
+      Payments__SimulatedMobileMoney__ApiKey: ${KIBO_MOMO_API_KEY:-}
+      Payments__SimulatedMobileMoney__CallbackSigningSecret: ${KIBO_MOMO_CALLBACK_SECRET:-}
+      Payments__SimulatedMobileMoney__CallbackUrl: https://${KIBO_PUBLIC_HOST}/api/payments/callback/sim-momo
+      Kibo__Onboarding__PortalBaseUrl: https://${KIBO_PUBLIC_HOST}
+      Kibo__Onboarding__RadiusServerAddress: ${KIBO_RADIUS_TUNNEL_ADDRESS:?required}
+      Kibo__Onboarding__ApiAllowedFrom: ${KIBO_TUNNEL_SUBNET:?required}
+      Kibo__TrustedProxies__0: ${KIBO_PROXY_ADDRESS:-}
+    volumes:
+      - keys:/keys
+    networks: [backend]
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/healthz || exit 1"]
+      interval: 30s
+
+  caddy:
+    image: caddy:2.10-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    command: ["caddy", "reverse-proxy", "--from", "${KIBO_PUBLIC_HOST}", "--to", "web:8080"]
+    volumes:
+      - caddy:/data
+    networks: [backend]
+
+volumes:
+  pgdata:
+  keys:
+  caddy:
+
+networks:
+  backend:

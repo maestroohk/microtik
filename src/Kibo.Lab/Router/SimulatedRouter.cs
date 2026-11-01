@@ -3,6 +3,7 @@ using System.Net;
 using System.Security.Cryptography;
 using System.Text;
 using Kibo.Lab.Radius;
+using Kibo.Radius;
 using Microsoft.Extensions.Options;
 
 namespace Kibo.Lab.Router;
@@ -33,14 +34,14 @@ public class HotspotSession
     public DateTime StartedAt { get; init; }
     public long? SessionTimeoutSeconds { get; init; }
     public long? TotalLimitBytes { get; init; }
-    public long UploadBitsPerSecond { get; init; }
-    public long DownloadBitsPerSecond { get; init; }
+    public long UploadBitsPerSecond { get; set; }
+    public long DownloadBitsPerSecond { get; set; }
     public int InterimSeconds { get; init; } = 60;
     public byte[]? Class { get; init; }
     public long BytesIn { get; set; }
     public long BytesOut { get; set; }
     public DateTime LastInterim { get; set; }
-    public string RateLimit { get; init; } = "";
+    public string RateLimit { get; set; } = "";
     public bool IsPppoe { get; init; }
     public string? FramedIp { get; init; }
 
@@ -192,6 +193,22 @@ public class SimulatedRouter(RadiusClient radius, IOptions<LabOptions> options, 
         }
 
         return removed;
+    }
+
+    public int ChangeRate(string username, string rate)
+    {
+        var (up, down) = ParseRate(rate);
+        var changed = 0;
+        foreach (var session in sessions.Values.Where(s => s.User == username))
+        {
+            session.RateLimit = rate;
+            session.UploadBitsPerSecond = up;
+            session.DownloadBitsPerSecond = down;
+            session.Device.LastMessage = $"Speed changed by CoA to {rate}";
+            changed++;
+        }
+
+        return changed;
     }
 
     public async Task RebootAsync(CancellationToken ct)
