@@ -21,6 +21,41 @@ public class SubscriptionLifecycle(KiboDb kiboDb, TimeProvider clock, ILogger<Su
                 .SetProperty(a => a.AcctTerminateCause, "Stale-Session"), ct);
     }
 
+    public async Task RecordDevicesAsync(CancellationToken ct)
+    {
+        var since = clock.GetUtcNow().UtcDateTime.AddMinutes(-2);
+        await using var db = kiboDb.ForSystem();
+        var seen = await (
+                from session in db.RadiusAccounting
+                join nas in db.RadiusNas on session.NasIpAddress equals nas.NasName
+                join account in db.AccessAccounts on new { session.UserName, nas.TenantId } equals new { UserName = (string?)account.Username, account.TenantId }
+                where (session.AcctUpdateTime ?? session.AcctStartTime) >= since && account.CustomerId != null && session.CallingStationId != null &&
+                      session.CallingStationId != ""
+                select new { account.TenantId, CustomerId = account.CustomerId!.Value, Mac = session.CallingStationId!, Seen = (session.AcctUpdateTime ?? session.AcctStartTime)!.Value })
+            .ToListAsync(ct);
+
+        foreach (var item in seen.GroupBy(s => new { s.TenantId, s.CustomerId, Mac = s.Mac.ToUpperInvariant() }))
+        {
+            var lastSeen = item.Max(s => s.Seen);
+            var device = await db.CustomerDevices.FirstOrDefaultAsync(d => d.TenantId == item.Key.TenantId &&
+                                                                        d.CustomerId == item.Key.CustomerId && d.MacAddress == item.Key.Mac, ct);
+            if (device == null)
+            {
+                db.CustomerDevices.Add(new CustomerDevice
+                {
+                    TenantId = item.Key.TenantId, CustomerId = item.Key.CustomerId, MacAddress = item.Key.Mac,
+                    FirstSeenAt = lastSeen, LastSeenAt = lastSeen
+                });
+            }
+            else if (device.LastSeenAt < lastSeen)
+            {
+                device.LastSeenAt = lastSeen;
+            }
+        }
+
+        await db.SaveChangesAsync(ct);
+    }
+
     public async Task ProcessBatchAsync(CancellationToken ct)
     {
         await using var db = kiboDb.ForSystem();
@@ -168,6 +203,7 @@ public class SubscriptionLifecycleWorker(IServiceScopeFactory scopeFactory, ILog
                 }
 
                 await lifecycle.ProcessBatchAsync(stoppingToken);
+                await lifecycle.RecordDevicesAsync(stoppingToken);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {

@@ -47,6 +47,8 @@
 }
 
 <div class="grid grid-cols-2 gap-4 lg:grid-cols-4">
+    @if (finance)
+    {
     <StatCard Label="Revenue today" Value="@Format.Money(data.RevenueToday, data.Currency)" Icon="wallet">
         <Detail>
             @if (data.RevenueYesterday > 0)
@@ -61,6 +63,7 @@
             }
         </Detail>
     </StatCard>
+    }
     <StatCard Label="Active subscribers" Value="@data.ActiveSubscriptions.ToString("N0")" Icon="users">
         <Detail>@data.ExpiringToday expire today · @data.NewCustomers7Days new this week</Detail>
     </StatCard>
@@ -94,6 +97,8 @@
     </StatCard>
 </div>
 
+@if (finance)
+{
 <div class="mt-6 grid gap-6 xl:grid-cols-[1.6fr_1fr]">
     <section class="card">
         <div class="card-header">
@@ -141,6 +146,7 @@
         }
     </section>
 </div>
+}
 
 <div class="mt-6 grid gap-6 xl:grid-cols-2">
     <section class="card overflow-hidden">
@@ -178,6 +184,8 @@
         }
     </section>
 
+    @if (finance)
+    {
     <section class="card overflow-hidden">
         <div class="card-header">
             <div class="card-title">Latest payments</div>
@@ -217,11 +225,13 @@
             </div>
         }
     </section>
+    }
 </div>
 
 @code {
     private DashboardData? data;
     private Timer? refresh;
+    private bool finance => CurrentUser.Can(Permissions.ViewFinance);
 
     protected override async Task OnInitializedAsync()
     {

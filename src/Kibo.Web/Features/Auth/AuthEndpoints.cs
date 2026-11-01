@@ -21,7 +21,11 @@ public static class AuthEndpoints
         app.MapPost("/account/login", LoginAsync);
         app.MapPost("/account/logout", async (HttpContext http, IAntiforgery antiforgery) =>
         {
-            await antiforgery.ValidateRequestAsync(http);
+            if (!await antiforgery.IsRequestValidAsync(http))
+            {
+                return Results.LocalRedirect("/");
+            }
+
             await http.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
             return Results.LocalRedirect("/login");
         });
@@ -30,7 +34,11 @@ public static class AuthEndpoints
     private static async Task<IResult> LoginAsync(HttpContext http, KiboDb kiboDb, TimeProvider clock,
         AuditLogger audit, IPasswordHasher<User> hasher, IAntiforgery antiforgery)
     {
-        await antiforgery.ValidateRequestAsync(http);
+        if (!await antiforgery.IsRequestValidAsync(http))
+        {
+            return Results.LocalRedirect("/login?error=expired");
+        }
+
         var form = await http.Request.ReadFormAsync();
         var email = form["email"].ToString().Trim().ToLowerInvariant();
         var password = form["password"].ToString();

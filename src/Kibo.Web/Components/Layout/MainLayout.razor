@@ -54,17 +54,38 @@
                     </div>
                     <div class="space-y-0.5">
                         <div class="eyebrow px-2.5 pb-1.5">Subscribers</div>
-                        <NavLink class="nav-link" href="/customers"><Icon Name="users" /> Customers</NavLink>
-                        <NavLink class="nav-link" href="/packages"><Icon Name="package" /> Packages</NavLink>
-                        <NavLink class="nav-link" href="/vouchers"><Icon Name="ticket" /> Vouchers</NavLink>
+                        @if (CurrentUser.Can(Permissions.ViewCustomers))
+                        {
+                            <NavLink class="nav-link" href="/customers"><Icon Name="users" /> Customers</NavLink>
+                        }
+                        @if (CurrentUser.Can(Permissions.ManagePackages))
+                        {
+                            <NavLink class="nav-link" href="/packages"><Icon Name="package" /> Packages</NavLink>
+                        }
+                        @if (CurrentUser.Can(Permissions.ManageVouchers) || CurrentUser.Can(Permissions.SellVouchers))
+                        {
+                            <NavLink class="nav-link" href="/vouchers"><Icon Name="ticket" /> Vouchers</NavLink>
+                        }
                     </div>
                     <div class="space-y-0.5">
                         <div class="eyebrow px-2.5 pb-1.5">Business</div>
-                        <NavLink class="nav-link" href="/payments"><Icon Name="wallet" /> Payments</NavLink>
-                        <NavLink class="nav-link" href="/reports"><Icon Name="dashboard" /> Reports</NavLink>
-                        <NavLink class="nav-link" href="/sites"><Icon Name="map-pin" /> Sites &amp; portal</NavLink>
-                        <NavLink class="nav-link" href="/staff"><Icon Name="users" /> Staff</NavLink>
-                        <NavLink class="nav-link" href="/audit"><Icon Name="scroll" /> Audit log</NavLink>
+                        @if (CurrentUser.Can(Permissions.ViewFinance))
+                        {
+                            <NavLink class="nav-link" href="/payments"><Icon Name="wallet" /> Payments</NavLink>
+                            <NavLink class="nav-link" href="/reports"><Icon Name="dashboard" /> Reports</NavLink>
+                        }
+                        @if (CurrentUser.Can(Permissions.ManageSettings))
+                        {
+                            <NavLink class="nav-link" href="/sites"><Icon Name="map-pin" /> Sites &amp; portal</NavLink>
+                        }
+                        @if (CurrentUser.Can(Permissions.ManageStaff))
+                        {
+                            <NavLink class="nav-link" href="/staff"><Icon Name="users" /> Staff</NavLink>
+                        }
+                        @if (CurrentUser.Can(Permissions.ViewAudit))
+                        {
+                            <NavLink class="nav-link" href="/audit"><Icon Name="scroll" /> Audit log</NavLink>
+                        }
                     </div>
                 }
                 @if (CurrentUser.IsPlatformAdmin)

@@ -218,6 +218,26 @@
         </section>
 
         <section class="card">
+            <div class="card-header">
+                <div class="card-title">Devices</div>
+                <span class="text-[11.5px] text-faint">For support only; not used to log in</span>
+            </div>
+            <ul class="divide-y divide-line">
+                @foreach (var d in customer.Devices.OrderByDescending(d => d.LastSeenAt))
+                {
+                    <li class="flex items-center justify-between px-5 py-2.5 text-[13px]">
+                        <span class="num">@d.MacAddress</span>
+                        <span class="text-muted">seen @Format.Ago(d.LastSeenAt, Now)</span>
+                    </li>
+                }
+                @if (customer.Devices.Count == 0)
+                {
+                    <li class="px-5 py-4 text-[13px] text-muted">No devices seen yet.</li>
+                }
+            </ul>
+        </section>
+
+        <section class="card">
             <div class="card-header"><div class="card-title">Recent login attempts</div></div>
             <ul class="divide-y divide-line">
                 @foreach (var a in detail.RecentAuth)

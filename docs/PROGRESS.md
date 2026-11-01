@@ -47,7 +47,10 @@ All ports bind to 127.0.0.1. The lab uses its own Docker network and does not to
 | PPPoE: accounts, static IP, cash sale, service-type separation, renewal requests | Done | PPPoE dial in simulator; voucher refused on PPPoE |
 | Reports (channel/package/site/agent, daily table, CSV), dashboard, audit logs, staff management | Done | Browser |
 | RADIUS CoA (fair-use speed change without disconnect) and Disconnect-Request fallback | Done | Live session dropped from 1024k/2048k to 128k/256k by CoA |
-| Security headers/CSP, secure cookies, rate limits, health check, forwarded headers | Done | Build + browser |
+| Security headers/CSP, secure cookies, rate limits, health check, forwarded headers | Done | curl + browser (no CSP violations) |
+| Role-aware navigation and dashboard; RBAC enforced in services | Done | Network engineer blocked from payments, reports, staff |
+| Tenant isolation in the UI and operator suspension | Done | Second operator sees nothing of the first; suspended owner refused |
+| Customer device history (MAC, for support only) | Done | Recorded from live accounting |
 | Production compose (Caddy TLS, WireGuard hub, web image) | Written | **Not yet built or run** |
 
 Automated tests: **49 passing** (`dotnet test`): business rules, phone/duration parsing, CHAP hashing, login-URL
