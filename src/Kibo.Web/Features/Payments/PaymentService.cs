@@ -211,7 +211,9 @@ public class PaymentService(
     {
         var package = await db.Packages.FirstAsync(p => p.Id == payment.PackageId, ct);
         var customer = await AccessAccounts.FindOrCreateCustomerAsync(db, payment.TenantId, payment.PhoneNumber, payment.SiteId, now, ct);
-        var account = await AccessAccounts.FindOrCreateHotspotAccountAsync(db, customer, now, ct);
+        var account = payment.AccessAccountId == null
+            ? await AccessAccounts.FindOrCreateHotspotAccountAsync(db, customer, now, ct)
+            : await db.AccessAccounts.FirstAsync(a => a.Id == payment.AccessAccountId, ct);
         var hasCurrent = await AccessAccounts.HasCurrentEntitlementAsync(db, account.Id, ct);
 
         var subscription = Entitlements.CreateFromPackage(package, account, now, SubscriptionSource.Payment,

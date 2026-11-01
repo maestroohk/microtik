@@ -72,7 +72,9 @@ public class DevelopmentSeeder(KiboDb kiboDb, IConfiguration configuration, IPas
             Package(kampala.Id, "Night Owl", "Unlimited 10pm to 6am", 1500, 1, ValidityUnit.Days, null, 6144, 2048, 1, now,
                 window: (new TimeOnly(22, 0), new TimeOnly(6, 0))),
             Package(kampala.Id, "Lab 5 Minutes / 20 MB", "For testing expiry and data caps", 100, 5, ValidityUnit.Minutes, 20, 1024, 512, 1, now),
-            Package(gulu.Id, "Day Pass", "24 hours", 1000, 1, ValidityUnit.Days, null, 2048, 1024, 1, now));
+            Package(gulu.Id, "Day Pass", "24 hours", 1000, 1, ValidityUnit.Days, null, 2048, 1024, 1, now),
+            PppoePackage(kampala.Id, "Home 10 Mbps", 85000, 10240, 5120, now),
+            PppoePackage(kampala.Id, "Home 20 Mbps", 140000, 20480, 10240, now));
 
         var simPassword = configuration["Lab:SimApiPassword"];
         if (!string.IsNullOrEmpty(simPassword))
@@ -120,6 +122,14 @@ public class DevelopmentSeeder(KiboDb kiboDb, IConfiguration configuration, IPas
             Description = "Kibo lab simulator"
         });
     }
+
+    private static Package PppoePackage(Guid tenantId, string name, decimal price, int downKbps, int upKbps, DateTime now) => new()
+    {
+        TenantId = tenantId, Name = name, Description = "Unlimited home internet, renews monthly", Price = price,
+        ServiceType = ServiceType.Pppoe, ValidityAmount = 1, ValidityUnit = ValidityUnit.CalendarMonths,
+        ValidityStart = ValidityStart.OnPurchase, DownloadKbps = downKbps, UploadKbps = upKbps, MaxDevices = 1,
+        GraceMinutes = 1440, IsRecurring = true, ShowOnPortal = false, Currency = "UGX", SortOrder = 1000, CreatedAt = now
+    };
 
     private static Package Package(Guid tenantId, string name, string description, decimal price, int amount, ValidityUnit unit,
         long? dataMb, int downKbps, int upKbps, int devices, DateTime now, int? throttle = null,

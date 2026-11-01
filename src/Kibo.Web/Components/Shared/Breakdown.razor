@@ -1,0 +1,31 @@
+@using Kibo.Web.Features.Reports
+
+<section class="card">
+    <div class="card-header"><div class="card-title">@Title</div></div>
+    @if (Rows.Count == 0)
+    {
+        <div class="px-5 py-8 text-center text-[13px] text-muted">No sales in this period.</div>
+    }
+    else
+    {
+        var max = Math.Max(1, Rows.Max(r => r.Revenue));
+        <ul class="space-y-3.5 p-5">
+            @foreach (var row in Rows)
+            {
+                <li>
+                    <div class="flex items-baseline justify-between gap-3 text-[13px]">
+                        <span class="truncate">@row.Label</span>
+                        <span class="num shrink-0">@Format.Money(row.Revenue, Currency) <span class="text-faint">· @row.Sales</span></span>
+                    </div>
+                    <div class="mt-1.5 h-1.5 rounded-full bg-surface-2"><div class="h-1.5 rounded-full bg-primary" style="width:@(row.Revenue / max * 100)%"></div></div>
+                </li>
+            }
+        </ul>
+    }
+</section>
+
+@code {
+    [Parameter, EditorRequired] public string Title { get; set; } = "";
+    [Parameter, EditorRequired] public List<BreakdownRow> Rows { get; set; } = [];
+    [Parameter] public string Currency { get; set; } = "UGX";
+}

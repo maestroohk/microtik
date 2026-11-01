@@ -1,0 +1,106 @@
+@page "/reports"
+@attribute [Authorize]
+@using Kibo.Web.Features.Reports
+@inject ReportService ReportService
+@inject CurrentUser CurrentUser
+@inject IJSRuntime JS
+@inject TimeProvider Clock
+
+<PageHeader Title="Reports" Subtitle="Sales, growth and network usage for any period, in your local time.">
+    <Actions>
+        <div class="segmented" role="group" aria-label="Period">
+            @foreach (var days in new[] { 7, 30, 90 })
+            {
+                <button class="@(periodDays == days ? "on" : "")" @onclick="() => SetPeriodAsync(days)">@days days</button>
+            }
+        </div>
+        @if (data != null)
+        {
+            <button class="btn" @onclick="ExportAsync"><Icon Name="download" /> CSV</button>
+        }
+    </Actions>
+</PageHeader>
+
+@if (!CurrentUser.Can(Permissions.ViewFinance))
+{
+    <div class="card"><EmptyState Icon="shield" Title="Finance access required" /></div>
+    return;
+}
+
+@if (data == null)
+{
+    <div class="skeleton h-[400px]"></div>
+    return;
+}
+
+<div class="grid grid-cols-2 gap-4 lg:grid-cols-4">
+    <StatCard Label="Net revenue" Value="@Format.Money(data.GrossSales - data.Refunds, data.Currency)"><Detail>@Format.Money(data.Refunds, data.Currency) refunded</Detail></StatCard>
+    <StatCard Label="Sales" Value="@data.SalesCount.ToString("N0")"><Detail>@Format.Money(data.Commission, data.Currency) agent commission</Detail></StatCard>
+    <StatCard Label="New customers" Value="@data.NewCustomers.ToString("N0")"><Detail>From @data.From.ToString("d MMM") to @data.To.ToString("d MMM")</Detail></StatCard>
+    <StatCard Label="Data delivered" Value="@Format.Bytes(data.DataBytes)"><Detail>Sessions started in the period</Detail></StatCard>
+</div>
+
+<section class="card mt-6">
+    <div class="card-header"><div class="card-title">Daily revenue</div></div>
+    <div class="p-5">
+        <RevenueChart Days="data.Days.TakeLast(Math.Min(data.Days.Count, 31)).Select(d => new DailyRevenue(d.Day, d.Revenue, d.Sales)).ToList()" Currency="@data.Currency" />
+    </div>
+</section>
+
+<div class="mt-6 grid gap-6 lg:grid-cols-2">
+    <Breakdown Title="By sales channel" Rows="data.ByChannel" Currency="@data.Currency" />
+    <Breakdown Title="By package" Rows="data.ByPackage" Currency="@data.Currency" />
+    <Breakdown Title="By site" Rows="data.BySite" Currency="@data.Currency" />
+    <Breakdown Title="By agent" Rows="data.ByAgent" Currency="@data.Currency" />
+</div>
+
+<section class="card mt-6 overflow-hidden">
+    <div class="card-header"><div class="card-title">Day by day</div></div>
+    <div class="max-h-[420px] overflow-auto">
+        <table class="table">
+            <thead class="sticky top-0"><tr><th>Date</th><th class="right">Revenue</th><th class="right">Sales</th><th class="right">New customers</th><th class="right">Data</th><th class="right">Rejected logins</th></tr></thead>
+            <tbody>
+                @foreach (var d in data.Days.AsEnumerable().Reverse())
+                {
+                    <tr>
+                        <td>@d.Day.ToString("ddd d MMM")</td>
+                        <td class="right num">@d.Revenue.ToString("#,0")</td>
+                        <td class="right num">@d.Sales</td>
+                        <td class="right num">@d.NewCustomers</td>
+                        <td class="right num">@Format.Bytes(d.DataBytes)</td>
+                        <td class="right num @(d.FailedLogins > 20 ? "text-warn" : "")">@d.FailedLogins</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+</section>
+
+@code {
+    private ReportData? data;
+    private int periodDays = 30;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (CurrentUser.Can(Permissions.ViewFinance))
+        {
+            await LoadAsync();
+        }
+    }
+
+    private async Task SetPeriodAsync(int days)
+    {
+        periodDays = days;
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        var today = DateOnly.FromDateTime(TimeZoneInfo.ConvertTimeFromUtc(Clock.GetUtcNow().UtcDateTime,
+            TimeZoneInfo.FindSystemTimeZoneById("Africa/Kampala")));
+        data = await ReportService.LoadAsync(today.AddDays(1 - periodDays), today);
+    }
+
+    private async Task ExportAsync() =>
+        await JS.InvokeVoidAsync("kibo.download", $"kibo-report-{data!.From:yyyyMMdd}-{data.To:yyyyMMdd}.csv", ReportService.ToCsv(data));
+}

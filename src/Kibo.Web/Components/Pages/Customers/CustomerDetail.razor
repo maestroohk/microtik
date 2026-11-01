@@ -8,6 +8,7 @@
 @inject PackageService Packages
 @inject BillingService Billing
 @inject SessionService SessionService
+@inject Kibo.Web.Features.Pppoe.PppoeService Pppoe
 @inject CurrentUser CurrentUser
 @inject NavigationManager Navigation
 @inject TimeProvider Clock
@@ -199,6 +200,17 @@
             {
                 <div class="px-5 py-4 text-[13px] text-muted">Created with the first sale.</div>
             }
+            @if (CurrentUser.Can(Permissions.ManageCustomers) && !detail.Accounts.Any(a => a.Kind == AccessAccountKind.Pppoe))
+            {
+                <div class="border-t border-line p-4">
+                    <div class="text-[12.5px] font-medium">Add a PPPoE login</div>
+                    <div class="mt-2 flex flex-wrap gap-2">
+                        <input class="input h-8 min-w-0 flex-1 num" placeholder="Username (optional)" @bind="pppoeUsername" aria-label="PPPoE username" />
+                        <input class="input h-8 w-32 num" placeholder="Static IP" @bind="pppoeStaticIp" aria-label="Static IP" />
+                        <button class="btn btn-sm" @onclick="CreatePppoeAsync">Create</button>
+                    </div>
+                </div>
+            }
         </section>
 
         <section class="card">
@@ -255,12 +267,27 @@
     private string? message;
     private bool messageOk;
     private readonly HashSet<Guid> revealed = [];
+    private string pppoeUsername = "";
+    private string pppoeStaticIp = "";
+
+    private async Task CreatePppoeAsync()
+    {
+        var result = await Pppoe.CreateAccountAsync(Id, pppoeUsername, pppoeStaticIp);
+        messageOk = result.Succeeded;
+        message = result.Succeeded ? $"PPPoE login {result.Value!.Username} created. Sell a PPPoE package to activate it." : result.Error;
+        if (result.Succeeded)
+        {
+            revealed.Add(result.Value!.Id);
+        }
+
+        await LoadAsync();
+    }
 
     private DateTime Now => Clock.GetUtcNow().UtcDateTime;
 
     protected override async Task OnInitializedAsync()
     {
-        packages = (await Packages.ListAsync(includeInactive: false)).Where(p => p.ServiceType == ServiceType.Hotspot).ToList();
+        packages = await Packages.ListAsync(includeInactive: false);
         await LoadAsync();
     }
 

@@ -30,6 +30,19 @@ public static class LabPages
             return Results.Redirect("/");
         });
 
+        app.MapPost("/lab/devices/{mac}/pppoe", async (string mac, HttpContext http, SimulatedRouter router, CancellationToken ct) =>
+        {
+            var device = router.FindDevice(mac);
+            var form = await http.Request.ReadFormAsync(ct);
+            if (device != null)
+            {
+                var result = await router.LoginAsync(device, form["username"].ToString(), form["password"].ToString(), ct, pppoe: true);
+                device.LastMessage = $"PPPoE: {result.Message}";
+            }
+
+            return Results.Redirect("/");
+        });
+
         app.MapPost("/lab/reboot", async (SimulatedRouter router, CancellationToken ct) =>
         {
             await router.RebootAsync(ct);
@@ -172,7 +185,9 @@ public static class LabPages
             body.Append($"""
                 <tr><td>{Encode(device.Name)}</td><td class="mono">{device.Mac}<br>{device.Ip}</td>
                 <td>{ActivityButtons(device)}</td><td>{Encode(device.LastMessage ?? "")}</td>
-                <td><a class="button" href="/hotspot/connect/{Uri.EscapeDataString(device.Mac)}">Open browser on this phone</a></td></tr>
+                <td><a class="button" href="/hotspot/connect/{Uri.EscapeDataString(device.Mac)}">Open browser on this phone</a>
+                <form method="post" action="/lab/devices/{Uri.EscapeDataString(device.Mac)}/pppoe" style="display:block;margin-top:6px">
+                <input name="username" placeholder="PPPoE user" size="12"> <input name="password" placeholder="password" size="10"> <button>Dial PPPoE</button></form></td></tr>
                 """);
         }
 
@@ -182,7 +197,7 @@ public static class LabPages
             var limit = s.TotalLimitBytes == null ? "no data cap" : $"{s.TotalLimitBytes / 1024.0 / 1024.0:0.0} MB cap";
             var timeout = s.SessionTimeoutSeconds == null ? "no timeout" : $"timeout {s.SessionTimeoutSeconds}s";
             body.Append($"""
-                <tr><td class="mono">{Encode(s.User)}</td><td>{Encode(s.Device.Name)}</td><td>{s.UptimeSeconds(now)}s</td>
+                <tr><td class="mono">{Encode(s.User)}{(s.IsPppoe ? " <b>PPPoE</b>" : "")}</td><td>{Encode(s.Device.Name)}</td><td>{s.UptimeSeconds(now)}s</td>
                 <td>{(s.BytesIn + s.BytesOut) / 1024.0 / 1024.0:0.00} MB</td><td>{Encode(s.RateLimit)} · {limit} · {timeout}</td>
                 <td><form method="post" action="/lab/sessions/{s.Id.TrimStart('*')}/logout"><button>Log out</button></form></td></tr>
                 """);

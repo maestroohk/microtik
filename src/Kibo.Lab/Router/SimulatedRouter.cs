@@ -41,6 +41,8 @@ public class HotspotSession
     public long BytesOut { get; set; }
     public DateTime LastInterim { get; set; }
     public string RateLimit { get; init; } = "";
+    public bool IsPppoe { get; init; }
+    public string? FramedIp { get; init; }
 
     public long UptimeSeconds(DateTime now) => (long)(now - StartedAt).TotalSeconds;
 }
@@ -85,9 +87,10 @@ public class SimulatedRouter(RadiusClient radius, IOptions<LabOptions> options, 
 
     public static string OctalEscape(byte[] bytes) => string.Concat(bytes.Select(b => "\\" + Convert.ToString(b, 8).PadLeft(3, '0')));
 
-    public async Task<LoginResult> LoginAsync(SimDevice device, string username, string password, CancellationToken ct)
+    public async Task<LoginResult> LoginAsync(SimDevice device, string username, string password, CancellationToken ct,
+        bool pppoe = false)
     {
-        if (sessions.Values.Any(s => s.Device.Mac == device.Mac))
+        if (sessions.Values.Any(s => s.Device.Mac == device.Mac && s.IsPppoe == pppoe))
         {
             return new LoginResult(false, "This device is already logged in", null);
         }
@@ -105,14 +108,17 @@ public class SimulatedRouter(RadiusClient radius, IOptions<LabOptions> options, 
             request.Add(RadiusAttr.UserPassword, RadiusPacket.EncryptPassword(password, Settings.RadiusSecret, request.Authenticator));
         }
 
-        request.Add(RadiusAttr.ServiceType, 1u)
+        request.Add(RadiusAttr.ServiceType, pppoe ? 2u : 1u)
             .Add(RadiusAttr.NasIpAddress, IPAddress.Parse(Settings.NasIpAddress))
             .Add(RadiusAttr.NasIdentifier, Settings.Identity)
             .Add(RadiusAttr.NasPortType, 19u)
             .Add(RadiusAttr.NasPort, (uint)(sessionCounter & 0xffff))
             .Add(RadiusAttr.CallingStationId, device.Mac)
-            .Add(RadiusAttr.CalledStationId, "hotspot1")
-            .Add(RadiusAttr.FramedIpAddress, IPAddress.Parse(device.Ip));
+            .Add(RadiusAttr.CalledStationId, pppoe ? "pppoe-in1" : "hotspot1");
+        if (!pppoe)
+        {
+            request.Add(RadiusAttr.FramedIpAddress, IPAddress.Parse(device.Ip));
+        }
 
         RadiusPacket response;
         try
@@ -151,6 +157,8 @@ public class SimulatedRouter(RadiusClient radius, IOptions<LabOptions> options, 
             InterimSeconds = (int)(response.Find(RadiusAttr.AcctInterimInterval)?.AsUInt() ?? 60),
             Class = response.Find(RadiusAttr.Class)?.Value,
             RateLimit = rate,
+            IsPppoe = pppoe,
+            FramedIp = response.Find(RadiusAttr.FramedIpAddress) is { } framed ? new IPAddress(framed.Value).ToString() : null,
             LastInterim = DateTime.UtcNow
         };
         sessions[session.Id] = session;
@@ -277,8 +285,9 @@ public class SimulatedRouter(RadiusClient radius, IOptions<LabOptions> options, 
             .Add(RadiusAttr.NasIdentifier, Settings.Identity)
             .Add(RadiusAttr.NasPortType, 19u)
             .Add(RadiusAttr.CallingStationId, session.Device.Mac)
-            .Add(RadiusAttr.CalledStationId, "hotspot1")
-            .Add(RadiusAttr.FramedIpAddress, IPAddress.Parse(session.Device.Ip))
+            .Add(RadiusAttr.CalledStationId, session.IsPppoe ? "pppoe-in1" : "hotspot1")
+            .Add(RadiusAttr.ServiceType, session.IsPppoe ? 2u : 1u)
+            .Add(RadiusAttr.FramedIpAddress, IPAddress.Parse(session.FramedIp ?? session.Device.Ip))
             .Add(RadiusAttr.EventTimestamp, (uint)new DateTimeOffset(now).ToUnixTimeSeconds());
 
         if (session.Class != null)

@@ -9,6 +9,7 @@ using Kibo.Web.Features.Packages;
 using Kibo.Web.Features.Payments;
 using Kibo.Web.Features.Platform;
 using Kibo.Web.Features.Portal;
+using Kibo.Web.Features.Pppoe;
 using Kibo.Web.Features.Reports;
 using Kibo.Web.Features.Sites;
 using Kibo.Web.Features.Routers;
@@ -100,6 +101,10 @@ builder.Services.AddScoped<CustomerService>();
 builder.Services.AddScoped<VoucherService>();
 builder.Services.AddScoped<AgentService>();
 builder.Services.AddScoped<AuditQuery>();
+builder.Services.AddScoped<PppoeService>();
+builder.Services.AddScoped<ReportService>();
+builder.Services.AddScoped<StaffService>();
+builder.Services.AddScoped<RenewalService>();
 builder.Services.Configure<OnboardingOptions>(builder.Configuration.GetSection("Kibo:Onboarding"));
 
 builder.Services.AddHttpClient(RouterOsClient.StrictClientName);
@@ -115,6 +120,7 @@ builder.Services.AddHttpClient<IPaymentProvider, SimulatedMobileMoneyProvider>(c
 builder.Services.AddHostedService<RouterMonitorWorker>();
 builder.Services.AddHostedService<SubscriptionLifecycleWorker>();
 builder.Services.AddHostedService<JobWorker>();
+builder.Services.AddHostedService<RenewalWorker>();
 
 builder.Services.AddRateLimiter(options =>
 {

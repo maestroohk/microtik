@@ -93,6 +93,13 @@ public class SessionService(
                     await routerClient.RemoveHotspotActiveAsync(connection, session.Id, ct);
                     removed++;
                 }
+
+                var ppp = await routerClient.GetPppActiveAsync(connection, ct);
+                foreach (var session in ppp.Where(a => a.Name == username))
+                {
+                    await routerClient.RemovePppActiveAsync(connection, session.Id, ct);
+                    removed++;
+                }
             }
             catch (RouterOsException ex)
             {

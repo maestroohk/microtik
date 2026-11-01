@@ -131,7 +131,20 @@ public class BillingService(KiboDb kiboDb, CurrentUser currentUser, AuditLogger 
             return OperationResult<Subscription>.Fail("Reactivate the customer before selling a package.");
         }
 
-        var account = await AccessAccounts.FindOrCreateHotspotAccountAsync(db, customer, now, CancellationToken.None);
+        AccessAccount? account;
+        if (package.ServiceType == ServiceType.Pppoe)
+        {
+            account = await db.AccessAccounts.FirstOrDefaultAsync(a => a.CustomerId == customer.Id && a.Kind == AccessAccountKind.Pppoe);
+            if (account == null)
+            {
+                return OperationResult<Subscription>.Fail("Create a PPPoE login for this customer before selling a PPPoE package.");
+            }
+        }
+        else
+        {
+            account = await AccessAccounts.FindOrCreateHotspotAccountAsync(db, customer, now, CancellationToken.None);
+        }
+
         var hasCurrent = await AccessAccounts.HasCurrentEntitlementAsync(db, account.Id, CancellationToken.None);
         var reference = $"CASH{now:yyMMdd}{Convert.ToHexString(RandomNumberGenerator.GetBytes(4))}";
         var subscription = Entitlements.CreateFromPackage(package, account, now, SubscriptionSource.Manual, reference, hasCurrent,

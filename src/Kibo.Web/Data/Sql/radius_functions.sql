@@ -1,4 +1,8 @@
-CREATE OR REPLACE FUNCTION radius.evaluate(p_username text, p_nas text)
+DROP FUNCTION IF EXISTS radius.check_items(text, text);
+DROP FUNCTION IF EXISTS radius.reply_items(text, text);
+DROP FUNCTION IF EXISTS radius.evaluate(text, text);
+
+CREATE OR REPLACE FUNCTION radius.evaluate(p_username text, p_nas text, p_service text DEFAULT '')
 RETURNS TABLE (
     allowed boolean,
     message text,
@@ -35,6 +39,12 @@ BEGIN
 
     IF NOT EXISTS (SELECT 1 FROM public.tenants t WHERE t.id = v_tenant AND t.status = 0) THEN
         RETURN QUERY SELECT false, 'This hotspot is temporarily unavailable.', a.password, 1, NULL::bigint,
+            NULL::text, NULL::bigint, NULL::text, NULL::uuid;
+        RETURN;
+    END IF;
+
+    IF (a.service_type = 'ppp' AND p_service = 'Login-User') OR (a.service_type = 'hotspot' AND p_service = 'Framed-User') THEN
+        RETURN QUERY SELECT false, 'This login is not valid for this service.', a.password, 1, NULL::bigint,
             NULL::text, NULL::bigint, NULL::text, NULL::uuid;
         RETURN;
     END IF;
@@ -133,10 +143,10 @@ BEGIN
 END;
 $$;
 
-CREATE OR REPLACE FUNCTION radius.check_items(p_username text, p_nas text)
+CREATE OR REPLACE FUNCTION radius.check_items(p_username text, p_nas text, p_service text DEFAULT '')
 RETURNS TABLE (id integer, username text, attribute text, value text, op text)
 LANGUAGE sql STABLE AS $$
-    WITH e AS (SELECT * FROM radius.evaluate(p_username, p_nas))
+    WITH e AS (SELECT * FROM radius.evaluate(p_username, p_nas, p_service))
     SELECT 1, p_username, 'Cleartext-Password', e.password, ':=' FROM e WHERE e.allowed
     UNION ALL
     SELECT 2, p_username, 'Simultaneous-Use', e.simultaneous_use::text, ':=' FROM e WHERE e.allowed
@@ -144,10 +154,10 @@ LANGUAGE sql STABLE AS $$
     SELECT 3, p_username, 'Auth-Type', 'Reject', ':=' FROM e WHERE NOT e.allowed;
 $$;
 
-CREATE OR REPLACE FUNCTION radius.reply_items(p_username text, p_nas text)
+CREATE OR REPLACE FUNCTION radius.reply_items(p_username text, p_nas text, p_service text DEFAULT '')
 RETURNS TABLE (id integer, username text, attribute text, value text, op text)
 LANGUAGE sql STABLE AS $$
-    WITH e AS (SELECT * FROM radius.evaluate(p_username, p_nas))
+    WITH e AS (SELECT * FROM radius.evaluate(p_username, p_nas, p_service))
     SELECT 1, p_username, 'Reply-Message', e.message, ':=' FROM e WHERE NOT e.allowed
     UNION ALL
     SELECT 2, p_username, 'Session-Timeout', e.session_timeout::text, ':=' FROM e WHERE e.allowed AND e.session_timeout IS NOT NULL

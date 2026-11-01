@@ -1,0 +1,134 @@
+@page "/staff"
+@attribute [Authorize]
+@using Kibo.Web.Features.Platform
+@inject StaffService StaffService
+@inject CurrentUser CurrentUser
+@inject TimeProvider Clock
+
+<PageHeader Title="Staff" Subtitle="People who can sign in to this operator account, and what each role may do." />
+
+@if (!CurrentUser.Can(Permissions.ManageStaff))
+{
+    <div class="card"><EmptyState Icon="shield" Title="Owners and administrators only" /></div>
+    return;
+}
+
+@if (message != null)
+{
+    <div class="mb-5"><Notice Kind="@(messageOk ? "ok" : "bad")">@message</Notice></div>
+}
+
+<div class="grid gap-6 xl:grid-cols-[1fr_340px]">
+    <div class="card overflow-hidden">
+        <div class="overflow-x-auto">
+            <table class="table">
+                <thead><tr><th>Name</th><th>Role</th><th>Status</th><th>Last sign-in</th><th></th></tr></thead>
+                <tbody>
+                    @foreach (var user in users)
+                    {
+                        <tr class="@(user.IsActive ? "" : "opacity-60")">
+                            <td><div class="font-medium">@user.FullName</div><div class="text-[12px] text-muted">@user.Email</div></td>
+                            <td>
+                                <select class="input h-8 w-44" value="@user.Role" @onchange="e => ChangeRoleAsync(user, e)" disabled="@(user.Id == CurrentUser.UserId)" aria-label="Role">
+                                    @foreach (var role in Enum.GetValues<UserRole>()) { <option value="@role">@RoleLabel(role)</option> }
+                                </select>
+                            </td>
+                            <td>@(user.IsActive ? "Active" : "Deactivated")@(user.LockedUntil > Clock.GetUtcNow().UtcDateTime ? " · locked" : "")</td>
+                            <td class="text-muted">@Format.Ago(user.LastLoginAt, Clock.GetUtcNow().UtcDateTime)</td>
+                            <td class="right">
+                                @if (user.Id != CurrentUser.UserId)
+                                {
+                                    <button class="btn btn-ghost btn-sm" @onclick="() => ToggleAsync(user)">@(user.IsActive ? "Deactivate" : "Reactivate")</button>
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <div class="space-y-6">
+        <section class="card">
+            <div class="card-header"><div class="card-title">Add staff member</div></div>
+            <EditForm Model="form" OnValidSubmit="InviteAsync" class="space-y-4 p-5">
+                <DataAnnotationsValidator />
+                <div><label class="label" for="sfname">Full name</label><InputText id="sfname" class="input" @bind-Value="form.FullName" /></div>
+                <div><label class="label" for="sfemail">Email</label><InputText id="sfemail" class="input" @bind-Value="form.Email" /><ValidationMessage For="() => form.Email" /></div>
+                <div>
+                    <label class="label" for="sfrole">Role</label>
+                    <InputSelect id="sfrole" class="input" @bind-Value="form.Role">
+                        @foreach (var role in Enum.GetValues<UserRole>()) { <option value="@role">@RoleLabel(role)</option> }
+                    </InputSelect>
+                </div>
+                <button class="btn btn-primary w-full" type="submit">Add and create password</button>
+            </EditForm>
+        </section>
+        <section class="card p-5 text-[12.5px] text-muted">
+            <div class="card-title mb-2 text-ink">Roles</div>
+            <p><b class="text-ink">Owner</b> everything, including refunds.</p>
+            <p class="mt-1"><b class="text-ink">Administrator</b> everything except refunds and cash reconciliation.</p>
+            <p class="mt-1"><b class="text-ink">Network engineer</b> routers and live sessions.</p>
+            <p class="mt-1"><b class="text-ink">Support</b> customers, disconnects, voucher sales.</p>
+            <p class="mt-1"><b class="text-ink">Finance</b> payments, refunds, reports, audit.</p>
+            <p class="mt-1"><b class="text-ink">Agent</b> sells vouchers only.</p>
+        </section>
+    </div>
+</div>
+
+@code {
+    private List<User> users = [];
+    private StaffForm form = new();
+    private string? message;
+    private bool messageOk;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (CurrentUser.Can(Permissions.ManageStaff))
+        {
+            users = await StaffService.ListAsync();
+        }
+    }
+
+    private static string RoleLabel(UserRole role) => role switch
+    {
+        UserRole.NetworkEngineer => "Network engineer",
+        _ => role.ToString()
+    };
+
+    private async Task InviteAsync()
+    {
+        var result = await StaffService.InviteAsync(form);
+        messageOk = result.Succeeded;
+        message = result.Succeeded
+            ? $"{form.Email} added. Share this one-time password privately; it is not shown again: {result.Value}"
+            : result.Error;
+        if (result.Succeeded)
+        {
+            form = new StaffForm();
+        }
+
+        users = await StaffService.ListAsync();
+    }
+
+    private async Task ChangeRoleAsync(User user, ChangeEventArgs e)
+    {
+        if (!Enum.TryParse<UserRole>(e.Value?.ToString(), out var role))
+        {
+            return;
+        }
+
+        var result = await StaffService.UpdateAsync(user.Id, role, user.IsActive);
+        messageOk = result.Succeeded;
+        message = result.Succeeded ? $"{user.FullName} is now {RoleLabel(role)}." : result.Error;
+        users = await StaffService.ListAsync();
+    }
+
+    private async Task ToggleAsync(User user)
+    {
+        var result = await StaffService.UpdateAsync(user.Id, user.Role, !user.IsActive);
+        messageOk = result.Succeeded;
+        message = result.Succeeded ? $"{user.FullName} {(user.IsActive ? "deactivated" : "reactivated")}." : result.Error;
+        users = await StaffService.ListAsync();
+    }
+}

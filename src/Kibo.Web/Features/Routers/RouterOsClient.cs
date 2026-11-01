@@ -18,6 +18,8 @@ public record RouterInterface(string Id, string Name, string Type, bool Running,
 public record HotspotActiveSession(string Id, string User, string Address, string MacAddress, long UptimeSeconds,
     long BytesIn, long BytesOut, string Server);
 
+public record PppActiveSession(string Id, string Name, string Address, string CallerId, long UptimeSeconds);
+
 public record HotspotServer(string Name, string Interface, string Profile, bool Disabled);
 
 public record RadiusClientEntry(string Address, string Service, bool Disabled);
@@ -101,6 +103,13 @@ public partial class RouterOsClient(IHttpClientFactory httpClientFactory)
         return items.Select(i => new HotspotActiveSession(Text(i, ".id"), Text(i, "user"), Text(i, "address"),
             Text(i, "mac-address"), ParseDuration(Text(i, "uptime")), Number(i, "bytes-in"), Number(i, "bytes-out"),
             Text(i, "server"))).ToList();
+    }
+
+    public async Task<List<PppActiveSession>> GetPppActiveAsync(RouterConnection connection, CancellationToken ct = default)
+    {
+        var items = await GetArrayAsync(connection, "ppp/active", ct);
+        return items.Select(i => new PppActiveSession(Text(i, ".id"), Text(i, "name"), Text(i, "address"),
+            Text(i, "caller-id"), ParseDuration(Text(i, "uptime")))).ToList();
     }
 
     public async Task RemoveHotspotActiveAsync(RouterConnection connection, string sessionId, CancellationToken ct = default)

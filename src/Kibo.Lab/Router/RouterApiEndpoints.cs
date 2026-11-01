@@ -53,7 +53,7 @@ public static class RouterApiEndpoints
         {
             var now = DateTime.UtcNow;
             var list = new JsonArray();
-            foreach (var s in router.Sessions)
+            foreach (var s in router.Sessions.Where(s => !s.IsPppoe))
             {
                 list.Add(new JsonObject
                 {
@@ -70,6 +70,31 @@ public static class RouterApiEndpoints
         });
 
         rest.MapPost("/ip/hotspot/active/remove", async (JsonObject body, SimulatedRouter router, CancellationToken ct) =>
+        {
+            var id = body[".id"]?.ToString() ?? "";
+            return await router.RemoveSessionAsync(id, "Admin-Reset", ct)
+                ? Results.Json(new JsonArray())
+                : Results.Json(new { error = 400, message = "no such item" }, statusCode: 400);
+        });
+
+        rest.MapGet("/ppp/active", (SimulatedRouter router) =>
+        {
+            var now = DateTime.UtcNow;
+            var list = new JsonArray();
+            foreach (var s in router.Sessions.Where(s => s.IsPppoe))
+            {
+                list.Add(new JsonObject
+                {
+                    [".id"] = s.Id, ["name"] = s.User, ["service"] = "pppoe", ["caller-id"] = s.Device.Mac,
+                    ["address"] = s.FramedIp ?? s.Device.Ip, ["uptime"] = FormatUptime(TimeSpan.FromSeconds(s.UptimeSeconds(now))),
+                    ["radius"] = "true"
+                });
+            }
+
+            return list;
+        });
+
+        rest.MapPost("/ppp/active/remove", async (JsonObject body, SimulatedRouter router, CancellationToken ct) =>
         {
             var id = body[".id"]?.ToString() ?? "";
             return await router.RemoveSessionAsync(id, "Admin-Reset", ct)
