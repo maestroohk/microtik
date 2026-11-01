@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <base href="/" />
+    <script>
+        (function () {
+            try {
+                var stored = localStorage.getItem("kibo-theme");
+                var dark = stored ? stored === "dark" : window.matchMedia("(prefers-color-scheme: dark)").matches;
+                if (dark) document.documentElement.classList.add("dark");
+            } catch (e) { }
+        })();
+    </script>
+    <link rel="preload" href="/fonts/geist.woff2" as="font" type="font/woff2" crossorigin />
+    <ResourcePreloader />
+    <link rel="stylesheet" href="@Assets["css/app.css"]" />
+    <link rel="icon" href="favicon.svg" type="image/svg+xml" />
+    <ImportMap />
+    <HeadOutlet @rendermode="PageRenderMode" />
+</head>
+
+<body>
+    <Routes @rendermode="PageRenderMode" />
+    @if (PageRenderMode != null)
+    {
+        <ReconnectModal />
+        <script src="@Assets["_framework/blazor.web.js"]"></script>
+        <script src="@Assets["js/app.js"]"></script>
+    }
+</body>
+
+</html>
+
+@code {
+    [CascadingParameter]
+    private HttpContext HttpContext { get; set; } = default!;
+
+    private IComponentRenderMode? PageRenderMode =>
+        HttpContext.AcceptsInteractiveRouting() ? InteractiveServer : null;
+}

@@ -1,0 +1,22 @@
+<span class="@($"badge {Css}")">@Label</span>
+
+@code {
+    [Parameter] public SubscriptionStatus Status { get; set; }
+
+    private string Css => Status switch
+    {
+        SubscriptionStatus.Active => "badge-ok",
+        SubscriptionStatus.Unused => "badge-info",
+        SubscriptionStatus.Scheduled => "badge-primary",
+        SubscriptionStatus.Exhausted or SubscriptionStatus.Expired => "",
+        _ => "badge-bad"
+    };
+
+    private string Label => Status switch
+    {
+        SubscriptionStatus.Unused => "Not started",
+        SubscriptionStatus.Scheduled => "Queued",
+        SubscriptionStatus.Exhausted => "Used up",
+        _ => Status.ToString()
+    };
+}

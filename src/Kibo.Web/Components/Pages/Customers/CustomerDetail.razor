@@ -1,0 +1,344 @@
+@page "/customers/{Id:guid}"
+@attribute [Authorize]
+@using Kibo.Web.Features.Customers
+@using Kibo.Web.Features.Packages
+@using Kibo.Web.Features.Payments
+@using Kibo.Web.Features.Sessions
+@inject CustomerService Customers
+@inject PackageService Packages
+@inject BillingService Billing
+@inject SessionService SessionService
+@inject CurrentUser CurrentUser
+@inject NavigationManager Navigation
+@inject TimeProvider Clock
+
+@if (detail == null)
+{
+    <div class="skeleton h-10 w-72"></div>
+    <div class="skeleton mt-6 h-[300px]"></div>
+    return;
+}
+
+@{
+    var customer = detail.Customer;
+    var current = detail.Subscriptions.FirstOrDefault(s => s.Status is SubscriptionStatus.Active or SubscriptionStatus.Unused);
+    var queued = detail.Subscriptions.Where(s => s.Status == SubscriptionStatus.Scheduled).ToList();
+    var online = detail.RecentSessions.Where(s => s.AcctStopTime == null).ToList();
+}
+
+<PageHeader Title="@customer.FullName" Subtitle="@($"{PhoneNumbers.Display(customer.PhoneNumber)} · {PhoneNumbers.Network(customer.PhoneNumber)} · joined {Format.Local(customer.CreatedAt)}")">
+    <Breadcrumb><a class="hover:text-ink" href="/customers">Customers</a><Icon Name="chevron-right" Size="13" /><span>@customer.FullName</span></Breadcrumb>
+    <Actions>
+        @if (CurrentUser.Can(Permissions.ManageCustomers))
+        {
+            @if (customer.Status == CustomerStatus.Active)
+            {
+                <button class="btn btn-danger" @onclick="() => SetStatusAsync(CustomerStatus.Suspended)">Suspend</button>
+            }
+            else
+            {
+                <button class="btn" @onclick="() => SetStatusAsync(CustomerStatus.Active)">Reactivate</button>
+            }
+        }
+    </Actions>
+</PageHeader>
+
+@if (message != null)
+{
+    <div class="mb-5"><Notice Kind="@(messageOk ? "ok" : "bad")" Text="@message" /></div>
+}
+@if (customer.Status != CustomerStatus.Active)
+{
+    <div class="mb-5"><Notice Kind="warn" Text="This customer is suspended. RADIUS rejects their logins until you reactivate them." /></div>
+}
+
+<div class="grid gap-6 xl:grid-cols-[1.4fr_1fr]">
+    <div class="min-w-0 space-y-6">
+        <section class="card">
+            <div class="card-header">
+                <div class="card-title">Current package</div>
+                @if (online.Count > 0)
+                {
+                    <span class="badge badge-ok badge-dot">Online on @online.Count device(s)</span>
+                }
+            </div>
+            @if (current == null)
+            {
+                <div class="px-5 py-6 text-[13px] text-muted">No active package.</div>
+            }
+            else
+            {
+                <div class="grid gap-5 p-5 sm:grid-cols-3">
+                    <div>
+                        <div class="text-[12px] text-muted">Package</div>
+                        <div class="mt-1 font-semibold">@current.PackageName</div>
+                        <div class="mt-1"><SubscriptionBadge Status="current.Status" /></div>
+                    </div>
+                    <div>
+                        <div class="text-[12px] text-muted">Valid until</div>
+                        <div class="mt-1 font-semibold">@(current.ExpiresAt == null ? "Starts at first login" : Format.Local(current.ExpiresAt))</div>
+                        @if (current.ExpiresAt != null)
+                        {
+                            <div class="mt-1 text-[12px] text-muted">@Format.Until(current.ExpiresAt, Now)</div>
+                        }
+                    </div>
+                    <div>
+                        <div class="text-[12px] text-muted">Data used</div>
+                        <div class="num mt-1 font-semibold">@Format.Bytes(current.UsedBytes)@(current.DataQuotaBytes == null ? "" : $" of {Format.Bytes(current.DataQuotaBytes.Value)}")</div>
+                        @if (current.DataQuotaBytes != null)
+                        {
+                            <div class="mt-2 h-1.5 rounded-full bg-surface-2"><div class="h-1.5 rounded-full bg-primary" style="width: @(Math.Min(100, current.UsedBytes * 100 / Math.Max(1, current.DataQuotaBytes.Value)))%"></div></div>
+                        }
+                    </div>
+                </div>
+            }
+            @if (queued.Count > 0)
+            {
+                <div class="border-t border-line px-5 py-3 text-[13px] text-muted">Queued next: @string.Join(", ", queued.Select(q => q.PackageName))</div>
+            }
+            @if (CurrentUser.Can(Permissions.ManageCustomers) && customer.Status == CustomerStatus.Active)
+            {
+                <div class="flex flex-wrap items-end gap-3 border-t border-line p-5">
+                    <div class="min-w-[220px] flex-1">
+                        <label class="label" for="sell">Sell a package for cash</label>
+                        <select id="sell" class="input" @bind="sellPackageId">
+                            <option value="">Choose a package…</option>
+                            @foreach (var p in packages)
+                            {
+                                <option value="@p.Id">@p.Name · @Format.Money(p.Price, p.Currency)</option>
+                            }
+                        </select>
+                    </div>
+                    <button class="btn btn-primary" disabled="@(sellPackageId == null)" @onclick="SellAsync">Record cash sale</button>
+                    @if (online.Count > 0 && CurrentUser.Can(Permissions.DisconnectSessions))
+                    {
+                        <button class="btn btn-danger" @onclick="DisconnectAsync">Disconnect now</button>
+                    }
+                </div>
+            }
+        </section>
+
+        <section class="card overflow-hidden">
+            <div class="card-header"><div class="card-title">Package history</div></div>
+            @if (detail.Subscriptions.Count == 0)
+            {
+                <div class="px-5 py-6 text-[13px] text-muted">No packages yet.</div>
+            }
+            else
+            {
+                <div class="overflow-x-auto">
+                    <table class="table">
+                        <thead><tr><th>Package</th><th>Status</th><th>Source</th><th>Started</th><th>Ended</th><th class="right">Used</th></tr></thead>
+                        <tbody>
+                            @foreach (var s in detail.Subscriptions)
+                            {
+                                <tr>
+                                    <td class="font-medium">@s.PackageName</td>
+                                    <td><SubscriptionBadge Status="s.Status" />@if (s.EndReason != null){<div class="mt-1 text-[11.5px] text-muted">@s.EndReason</div>}</td>
+                                    <td class="text-muted">@s.Source<div class="num text-[11.5px]">@s.SourceReference</div></td>
+                                    <td class="text-muted">@Format.Local(s.ActivatedAt)</td>
+                                    <td class="text-muted">@Format.Local(s.EndedAt)</td>
+                                    <td class="right num">@Format.Bytes(s.UsedBytes)<div class="text-[11.5px] text-muted">@Format.Duration(s.UsedSeconds)</div></td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </section>
+
+        <section class="card overflow-hidden">
+            <div class="card-header"><div class="card-title">Recent sessions</div></div>
+            @if (detail.RecentSessions.Count == 0)
+            {
+                <div class="px-5 py-6 text-[13px] text-muted">No sessions recorded.</div>
+            }
+            else
+            {
+                <div class="overflow-x-auto">
+                    <table class="table">
+                        <thead><tr><th>Started</th><th>Device</th><th class="right">Duration</th><th class="right">Data</th><th>Ended by</th></tr></thead>
+                        <tbody>
+                            @foreach (var s in detail.RecentSessions)
+                            {
+                                <tr>
+                                    <td class="text-muted">@Format.Local(s.AcctStartTime)</td>
+                                    <td class="num text-[12.5px]">@s.CallingStationId</td>
+                                    <td class="right num">@Format.Duration(s.AcctSessionTime ?? 0)</td>
+                                    <td class="right num">@Format.Bytes((s.AcctInputOctets ?? 0) + (s.AcctOutputOctets ?? 0))</td>
+                                    <td>@(s.AcctStopTime == null ? "Online" : string.IsNullOrEmpty(s.AcctTerminateCause) ? "—" : s.AcctTerminateCause)</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </section>
+    </div>
+
+    <div class="min-w-0 space-y-6">
+        <section class="card">
+            <div class="card-header"><div class="card-title">Login credentials</div></div>
+            @foreach (var account in detail.Accounts)
+            {
+                <div class="flex items-center justify-between gap-3 px-5 py-3 text-[13px]">
+                    <div>
+                        <div class="num font-medium">@account.Username</div>
+                        <div class="text-[12px] text-muted">@account.Kind · access code @(revealed.Contains(account.Id) ? account.Password : "••••••")</div>
+                    </div>
+                    <div class="flex gap-1">
+                        <button class="btn btn-ghost btn-sm" @onclick="() => Toggle(account.Id)">@(revealed.Contains(account.Id) ? "Hide" : "Show")</button>
+                        @if (CurrentUser.Can(Permissions.ManageCustomers))
+                        {
+                            <button class="btn btn-ghost btn-sm" @onclick="() => ResetCodeAsync(account.Id)">Reset</button>
+                        }
+                    </div>
+                </div>
+            }
+            @if (detail.Accounts.Count == 0)
+            {
+                <div class="px-5 py-4 text-[13px] text-muted">Created with the first sale.</div>
+            }
+        </section>
+
+        <section class="card">
+            <div class="card-header"><div class="card-title">Recent login attempts</div></div>
+            <ul class="divide-y divide-line">
+                @foreach (var a in detail.RecentAuth)
+                {
+                    <li class="flex items-center justify-between px-5 py-2.5 text-[13px]">
+                        <span class="@(a.Reply == "Access-Accept" ? "text-ok" : "text-bad")">@(a.Reply == "Access-Accept" ? "Accepted" : "Rejected")</span>
+                        <span class="num text-[12px] text-muted">@a.CallingStationId</span>
+                        <span class="text-muted">@Format.Ago(a.AuthDate, Now)</span>
+                    </li>
+                }
+                @if (detail.RecentAuth.Count == 0)
+                {
+                    <li class="px-5 py-4 text-[13px] text-muted">No login attempts yet.</li>
+                }
+            </ul>
+        </section>
+
+        <section class="card">
+            <div class="card-header"><div class="card-title">Support notes</div></div>
+            @if (CurrentUser.Can(Permissions.ManageCustomers))
+            {
+                <div class="flex gap-2 p-4">
+                    <input class="input" placeholder="Add a note…" @bind="note" @onkeydown="NoteKeyAsync" />
+                    <button class="btn" @onclick="AddNoteAsync">Add</button>
+                </div>
+            }
+            <ul class="divide-y divide-line border-t border-line">
+                @foreach (var n in detail.Notes)
+                {
+                    <li class="px-5 py-3 text-[13px]">
+                        <div>@n.Text</div>
+                        <div class="mt-0.5 text-[11.5px] text-faint">@n.Author · @Format.Local(n.CreatedAt)</div>
+                    </li>
+                }
+                @if (detail.Notes.Count == 0)
+                {
+                    <li class="px-5 py-4 text-[13px] text-muted">No notes yet.</li>
+                }
+            </ul>
+        </section>
+    </div>
+</div>
+
+@code {
+    [Parameter] public Guid Id { get; set; }
+
+    private CustomerProfile? detail;
+    private List<Package> packages = [];
+    private Guid? sellPackageId;
+    private string note = "";
+    private string? message;
+    private bool messageOk;
+    private readonly HashSet<Guid> revealed = [];
+
+    private DateTime Now => Clock.GetUtcNow().UtcDateTime;
+
+    protected override async Task OnInitializedAsync()
+    {
+        packages = (await Packages.ListAsync(includeInactive: false)).Where(p => p.ServiceType == ServiceType.Hotspot).ToList();
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        detail = await Customers.GetAsync(Id);
+        if (detail == null)
+        {
+            Navigation.NavigateTo("/customers");
+        }
+    }
+
+    private void Toggle(Guid id)
+    {
+        if (!revealed.Remove(id))
+        {
+            revealed.Add(id);
+        }
+    }
+
+    private async Task SellAsync()
+    {
+        var result = await Billing.SellForCashAsync(Id, sellPackageId!.Value, null);
+        messageOk = result.Succeeded;
+        message = result.Succeeded ? $"{result.Value!.PackageName} sold for cash and recorded in the ledger." : result.Error;
+        sellPackageId = null;
+        await LoadAsync();
+    }
+
+    private async Task SetStatusAsync(CustomerStatus status)
+    {
+        var result = await Customers.SetStatusAsync(Id, status, "Changed from the dashboard.");
+        messageOk = result.Succeeded;
+        message = result.Succeeded ? $"Customer is now {status.ToString().ToLowerInvariant()}." : result.Error;
+        await LoadAsync();
+    }
+
+    private async Task ResetCodeAsync(Guid accountId)
+    {
+        var result = await Customers.ResetAccessCodeAsync(accountId);
+        messageOk = result.Succeeded;
+        message = result.Succeeded ? "New access code generated. Share it with the customer." : result.Error;
+        revealed.Add(accountId);
+        await LoadAsync();
+    }
+
+    private async Task DisconnectAsync()
+    {
+        foreach (var account in detail!.Accounts)
+        {
+            try
+            {
+                await SessionService.DisconnectFromDashboardAsync(account.Username);
+                messageOk = true;
+                message = "Disconnect sent to the router.";
+            }
+            catch (InvalidOperationException ex)
+            {
+                messageOk = false;
+                message = ex.Message;
+            }
+        }
+
+        await LoadAsync();
+    }
+
+    private async Task AddNoteAsync()
+    {
+        await Customers.AddNoteAsync(Id, note);
+        note = "";
+        await LoadAsync();
+    }
+
+    private async Task NoteKeyAsync(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+        {
+            await AddNoteAsync();
+        }
+    }
+}

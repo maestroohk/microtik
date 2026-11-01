@@ -1,0 +1,10 @@
+<svg width="@Size" height="@Size" viewBox="0 0 32 32" aria-hidden="true" class="@Class">
+    <rect width="32" height="32" rx="8" fill="var(--primary)" />
+    <path d="M7 23 L14 11 L17.5 16.5 L19.5 13.5 L25 23 Z" fill="var(--on-primary)" />
+    <path d="M14 11 L15.8 14 L14 15.2 L12.4 13.8 Z" fill="var(--accent)" />
+</svg>
+
+@code {
+    [Parameter] public int Size { get; set; } = 28;
+    [Parameter] public string Class { get; set; } = "";
+}

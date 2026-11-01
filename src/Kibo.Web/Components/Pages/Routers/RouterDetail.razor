@@ -1,0 +1,312 @@
+@page "/routers/{Id:guid}"
+@attribute [Authorize]
+@using Kibo.Web.Features.Routers
+@using Microsoft.Extensions.Options
+@inject RouterService Routers
+@inject RouterLiveUpdates LiveUpdates
+@inject CurrentUser CurrentUser
+@inject NavigationManager Navigation
+@inject IJSRuntime JS
+@inject IOptions<OnboardingOptions> Onboarding
+@inject TimeProvider Clock
+@implements IDisposable
+
+@if (router == null)
+{
+    <div class="skeleton h-10 w-72"></div>
+    <div class="skeleton mt-6 h-[360px]"></div>
+    return;
+}
+
+<PageHeader Title="@router.Name" Subtitle="@($"{router.Site?.Name} · {router.ManagementHost}:{router.ManagementPort}")">
+    <Breadcrumb><a class="hover:text-ink" href="/routers">Routers</a><Icon Name="chevron-right" Size="13" /><span>@router.Name</span></Breadcrumb>
+    <Actions>
+        <button class="btn" @onclick="CheckNowAsync" disabled="@checking">
+            <Icon Name="refresh" Class="@(checking ? "animate-spin" : "")" /> @(checking ? "Checking…" : "Test connection")
+        </button>
+        @if (CurrentUser.Can(Permissions.ManageRouters))
+        {
+            <a class="btn" href="/routers/@router.Id/edit"><Icon Name="edit" /> Edit</a>
+        }
+    </Actions>
+</PageHeader>
+
+@if (IsNew)
+{
+    <div class="mb-5"><Notice Kind="ok">Router registered. Review the onboarding script below, apply it on the router, then use <b>Test connection</b>.</Notice></div>
+}
+@if (checkMessage != null)
+{
+    <div class="mb-5"><Notice Kind="@(checkOk ? "ok" : "bad")" Text="@checkMessage" /></div>
+}
+@if (router.ApiKind == RouterApiKind.Simulator)
+{
+    <div class="mb-5"><Notice Kind="warn">This router is the Kibo lab simulator. Its health figures are synthetic and do not verify RouterOS behaviour.</Notice></div>
+}
+
+<div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+    <div class="card p-4">
+        <div class="text-[12.5px] font-medium text-muted">Status</div>
+        <div class="mt-2.5"><RouterStatusBadge Status="router.Status" /></div>
+        <div class="mt-2.5 text-[12px] text-muted">
+            Checked @Format.Ago(router.LastCheckedAt, Now) · next @Format.Until(router.NextCheckAt, Now)
+        </div>
+    </div>
+    <div class="card p-4">
+        <div class="text-[12.5px] font-medium text-muted">CPU</div>
+        <div class="num mt-2 text-[24px] font-semibold leading-none">@(Latest?.CpuLoadPercent.ToString() ?? "—")<span class="text-[14px] text-muted">%</span></div>
+        <div class="mt-2"><LineChart Points="health.Select(h => (double)h.CpuLoadPercent).ToList()" Max="100" Height="36" Label="CPU load" /></div>
+    </div>
+    <div class="card p-4">
+        <div class="text-[12.5px] font-medium text-muted">Memory used</div>
+        <div class="num mt-2 text-[24px] font-semibold leading-none">@(Latest == null ? "—" : MemoryPercent(Latest).ToString("0"))<span class="text-[14px] text-muted">%</span></div>
+        <div class="mt-2 text-[12px] text-muted">@(Latest == null ? "" : $"{Format.Bytes(Latest.TotalMemoryBytes - Latest.FreeMemoryBytes)} of {Format.Bytes(Latest.TotalMemoryBytes)}")</div>
+    </div>
+    <div class="card p-4">
+        <div class="text-[12.5px] font-medium text-muted">Hotspot users</div>
+        <div class="num mt-2 text-[24px] font-semibold leading-none">@(Latest?.ActiveHotspotUsers.ToString() ?? "—")</div>
+        <div class="mt-2 text-[12px] text-muted">Uptime @(Latest == null ? "—" : Format.Duration(Latest.UptimeSeconds))</div>
+    </div>
+</div>
+
+<div class="mt-6 grid gap-6 xl:grid-cols-[1.5fr_1fr]">
+    <div class="min-w-0 space-y-6">
+        <section class="card">
+            <div class="card-header">
+                <div>
+                    <div class="card-title">Uplink traffic @(string.IsNullOrEmpty(router.UplinkInterface) ? "" : $"({router.UplinkInterface})")</div>
+                    <div class="text-[12px] text-muted">Last 2 hours, one sample per check</div>
+                </div>
+                <div class="flex gap-4 text-[12px]">
+                    <span class="flex items-center gap-1.5"><span class="h-0.5 w-3 rounded bg-[var(--chart-1)]"></span> Download @(Latest == null ? "" : Format.Bits(Latest.TxBitsPerSecond))</span>
+                    <span class="flex items-center gap-1.5"><span class="h-0.5 w-3 rounded bg-[var(--chart-2)]"></span> Upload @(Latest == null ? "" : Format.Bits(Latest.RxBitsPerSecond))</span>
+                </div>
+            </div>
+            <div class="space-y-3 p-5">
+                @if (string.IsNullOrEmpty(router.UplinkInterface))
+                {
+                    <p class="text-[13px] text-muted">Set an uplink interface on this router to record traffic.</p>
+                }
+                else
+                {
+                    <LineChart Points="health.Select(h => (double)h.TxBitsPerSecond).ToList()" Height="110" Label="Download" />
+                    <LineChart Points="health.Select(h => (double)h.RxBitsPerSecond).ToList()" Height="60" Color="var(--chart-2)" Label="Upload" />
+                }
+            </div>
+        </section>
+
+        <section class="card">
+            <div class="card-header">
+                <div>
+                    <div class="card-title">Onboarding script</div>
+                    <div class="text-[12px] text-muted">RouterOS v7. Review before applying; Kibo does not push configuration.</div>
+                </div>
+                <div class="flex gap-2">
+                    <button class="btn btn-sm" @onclick="CopyScriptAsync"><Icon Name="copy" Size="14" /> @(copied ? "Copied" : "Copy")</button>
+                    <button class="btn btn-sm" @onclick="DownloadLoginPageAsync"><Icon Name="download" Size="14" /> login.html</button>
+                </div>
+            </div>
+            <div class="p-5">
+                <pre class="code-block max-h-[340px]">@script</pre>
+                <div class="mt-3 flex items-center justify-between gap-3 text-[12px] text-muted">
+                    <span>RADIUS secret is unique to this router.</span>
+                    @if (CurrentUser.Can(Permissions.ManageRouters))
+                    {
+                        <button class="btn btn-ghost btn-sm" @onclick="RotateSecretAsync"><Icon Name="key" Size="14" /> Rotate secret</button>
+                    }
+                </div>
+            </div>
+        </section>
+    </div>
+
+    <div class="min-w-0 space-y-6">
+        <section class="card">
+            <div class="card-header"><div class="card-title">Device</div></div>
+            <dl class="divide-y divide-line text-[13px]">
+                @foreach (var (label, value) in Facts)
+                {
+                    <div class="flex items-center justify-between gap-4 px-5 py-2.5">
+                        <dt class="text-muted">@label</dt>
+                        <dd class="num truncate text-right">@value</dd>
+                    </div>
+                }
+            </dl>
+            @if (!string.IsNullOrEmpty(router.LastError))
+            {
+                <div class="border-t border-line p-4"><Notice Kind="bad" Text="@router.LastError" /></div>
+            }
+        </section>
+
+        <section class="card">
+            <div class="card-header"><div class="card-title">Connection history</div></div>
+            @if (events.Count == 0)
+            {
+                <div class="px-5 py-8 text-center text-[13px] text-muted">No events yet. The first check runs within a minute.</div>
+            }
+            else
+            {
+                <ol class="relative px-5 py-4">
+                    @foreach (var e in events)
+                    {
+                        <li class="relative flex gap-3 pb-4 last:pb-0">
+                            <span class="mt-1.5 size-2 shrink-0 rounded-full @EventColor(e.Kind)"></span>
+                            <div class="min-w-0">
+                                <div class="text-[13px] font-medium">@EventTitle(e.Kind)</div>
+                                <div class="text-[12.5px] text-muted">@e.Message</div>
+                                <div class="mt-0.5 text-[11.5px] text-faint">@Format.Local(e.OccurredAt)</div>
+                            </div>
+                        </li>
+                    }
+                </ol>
+            }
+        </section>
+
+        @if (CurrentUser.Can(Permissions.ManageRouters))
+        {
+            <section class="card p-5">
+                <div class="card-title">Remove router</div>
+                <p class="mt-1 text-[13px] text-muted">Its RADIUS client entry is deleted immediately, so customers on it can no longer log in.</p>
+                @if (confirmDelete)
+                {
+                    <div class="mt-4 flex gap-2">
+                        <button class="btn btn-danger" @onclick="DeleteAsync">Yes, remove @router.Name</button>
+                        <button class="btn" @onclick="() => confirmDelete = false">Cancel</button>
+                    </div>
+                }
+                else
+                {
+                    <button class="btn btn-danger mt-4" @onclick="() => confirmDelete = true"><Icon Name="trash" Size="14" /> Remove</button>
+                }
+            </section>
+        }
+    </div>
+</div>
+
+@code {
+    [Parameter] public Guid Id { get; set; }
+    [SupplyParameterFromQuery(Name = "new")] public int? NewFlag { get; set; }
+
+    private Router? router;
+    private List<RouterHealthSample> health = [];
+    private List<RouterEvent> events = [];
+    private string script = "";
+    private bool checking;
+    private bool checkOk;
+    private string? checkMessage;
+    private bool copied;
+    private bool confirmDelete;
+
+    private bool IsNew => NewFlag == 1;
+    private DateTime Now => Clock.GetUtcNow().UtcDateTime;
+    private RouterHealthSample? Latest => health.LastOrDefault();
+
+    private IEnumerable<(string, string)> Facts =>
+    [
+        ("Identity", router!.Identity ?? "—"),
+        ("Model", router.BoardName ?? "—"),
+        ("Architecture", router.Architecture ?? "—"),
+        ("RouterOS", router.RouterOsVersion ?? "—"),
+        ("Serial", router.SerialNumber ?? "—"),
+        ("REST API", router.SupportsRestApi == true ? "Available" : "Not verified"),
+        ("Hotspot", router.HotspotPresent switch { true => "Configured", false => "Not configured", _ => "—" }),
+        ("RADIUS client", router.RadiusConfigured switch { true => "Points to a RADIUS server", false => "Missing", _ => "—" }),
+        ("RADIUS source", router.NasIpAddress),
+        ("CoA port", router.CoaPort.ToString())
+    ];
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAsync();
+        LiveUpdates.RouterChanged += OnRouterChanged;
+    }
+
+    private async Task LoadAsync()
+    {
+        router = await Routers.GetAsync(Id);
+        if (router == null)
+        {
+            Navigation.NavigateTo("/routers");
+            return;
+        }
+
+        health = await Routers.GetHealthAsync(Id, TimeSpan.FromHours(2));
+        events = await Routers.GetEventsAsync(Id);
+        var options = Onboarding.Value;
+        script = RouterScripts.Onboarding(router, router.Site!, new OnboardingSettings(options.RadiusServerAddress,
+            options.PortalBaseUrl, new Uri(options.PortalBaseUrl).Host, options.ApiAllowedFrom));
+    }
+
+    private Task OnRouterChanged(Guid tenantId, Guid routerId) => routerId != Id
+        ? Task.CompletedTask
+        : InvokeAsync(async () =>
+        {
+            await LoadAsync();
+            StateHasChanged();
+        });
+
+    private async Task CheckNowAsync()
+    {
+        checking = true;
+        checkMessage = null;
+        var result = await Routers.CheckNowAsync(Id);
+        checking = false;
+        checkOk = result.Online;
+        checkMessage = result.Message;
+        await LoadAsync();
+    }
+
+    private async Task CopyScriptAsync()
+    {
+        copied = await JS.InvokeAsync<bool>("kibo.copy", script);
+    }
+
+    private async Task DownloadLoginPageAsync()
+    {
+        await JS.InvokeVoidAsync("kibo.download", "login.html", RouterScripts.LoginPage(router!.Site!, Onboarding.Value.PortalBaseUrl));
+    }
+
+    private async Task RotateSecretAsync()
+    {
+        var result = await Routers.RotateRadiusSecretAsync(Id);
+        checkOk = result.Succeeded;
+        checkMessage = result.Succeeded ? "New RADIUS secret generated. Update the /radius entry on the router or logins will fail." : result.Error;
+        await LoadAsync();
+    }
+
+    private async Task DeleteAsync()
+    {
+        var result = await Routers.DeleteAsync(Id);
+        if (result.Succeeded)
+        {
+            Navigation.NavigateTo("/routers");
+        }
+        else
+        {
+            checkMessage = result.Error;
+        }
+    }
+
+    private static double MemoryPercent(RouterHealthSample s) =>
+        s.TotalMemoryBytes == 0 ? 0 : (s.TotalMemoryBytes - s.FreeMemoryBytes) * 100.0 / s.TotalMemoryBytes;
+
+    private static string EventColor(RouterEventKind kind) => kind switch
+    {
+        RouterEventKind.Connected => "bg-ok",
+        RouterEventKind.Disconnected or RouterEventKind.ProvisioningFailed => "bg-bad",
+        RouterEventKind.AuthenticationFailed or RouterEventKind.Rebooted => "bg-warn",
+        _ => "bg-info"
+    };
+
+    private static string EventTitle(RouterEventKind kind) => kind switch
+    {
+        RouterEventKind.Connected => "Connected",
+        RouterEventKind.Disconnected => "Unreachable",
+        RouterEventKind.AuthenticationFailed => "API login rejected",
+        RouterEventKind.Rebooted => "Router restarted",
+        RouterEventKind.CapabilitiesDetected => "Capabilities detected",
+        RouterEventKind.ConfigurationChanged => "Configuration changed",
+        _ => "Provisioning failed"
+    };
+
+    public void Dispose() => LiveUpdates.RouterChanged -= OnRouterChanged;
+}

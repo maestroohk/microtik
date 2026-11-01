@@ -1,0 +1,53 @@
+@using Kibo.Web.Features.Reports
+
+<div class="relative">
+    <svg viewBox="0 0 @Width @Height" class="h-[200px] w-full" preserveAspectRatio="none" role="img"
+         aria-label="Revenue for the last 14 days">
+        @for (var g = 0; g <= 3; g++)
+        {
+            var y = Top + (Height - Top - Bottom) * g / 3.0;
+            <line x1="0" x2="@Width" y1="@y" y2="@y" stroke="var(--border)" stroke-dasharray="@(g == 3 ? "" : "3 4")" vector-effect="non-scaling-stroke" />
+        }
+        @for (var i = 0; i < Days.Count; i++)
+        {
+            var day = Days[i];
+            var barHeight = Max == 0 ? 0 : (double)(day.Amount / Max) * (Height - Top - Bottom);
+            var x = i * Slot + Slot * 0.18;
+            var w = Slot * 0.64;
+            var isToday = i == Days.Count - 1;
+            <rect x="@x" y="@(Height - Bottom - Math.Max(barHeight, day.Amount > 0 ? 2 : 0))" width="@w"
+                  height="@Math.Max(barHeight, day.Amount > 0 ? 2 : 0)" rx="2"
+                  fill="@(isToday ? "var(--primary)" : "color-mix(in oklab, var(--primary) 45%, var(--surface-3))")"
+                  @onmouseover="() => hover = i" @onmouseout="() => hover = null" />
+        }
+    </svg>
+    <div class="mt-2 flex justify-between text-[11px] text-faint">
+        <span>@Days.First().Day.ToString("d MMM")</span>
+        <span>@Days[Days.Count / 2].Day.ToString("d MMM")</span>
+        <span>Today</span>
+    </div>
+    @if (hover is int h)
+    {
+        var d = Days[h];
+        <div class="pointer-events-none absolute top-0 rounded-md border border-line bg-surface px-2.5 py-1.5 text-[12px] shadow-pop"
+             style="left: clamp(0px, calc(@((h + 0.5) / Days.Count * 100)% - 60px), calc(100% - 130px))">
+            <div class="text-faint">@d.Day.ToString("ddd d MMM")</div>
+            <div class="num font-semibold">@Format.Money(d.Amount, Currency)</div>
+            <div class="text-muted">@d.Sales sales</div>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public List<DailyRevenue> Days { get; set; } = [];
+    [Parameter] public string Currency { get; set; } = "UGX";
+
+    private const int Width = 700;
+    private const int Height = 200;
+    private const int Top = 8;
+    private const int Bottom = 1;
+    private int? hover;
+
+    private double Slot => Width / (double)Math.Max(1, Days.Count);
+    private decimal Max => Math.Max(1, Days.Count == 0 ? 0 : Days.Max(d => d.Amount));
+}

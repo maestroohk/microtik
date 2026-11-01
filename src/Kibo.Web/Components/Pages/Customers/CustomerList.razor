@@ -1,0 +1,157 @@
+@page "/customers"
+@attribute [Authorize]
+@using Kibo.Web.Features.Customers
+@using Kibo.Web.Features.Sites
+@inject CustomerService Customers
+@inject SiteService Sites
+@inject CurrentUser CurrentUser
+@inject NavigationManager Navigation
+@inject TimeProvider Clock
+
+<PageHeader Title="Customers" Subtitle="Everyone who has bought access, with their current package.">
+    <Actions>
+        @if (CurrentUser.Can(Permissions.ManageCustomers))
+        {
+            <button class="btn btn-primary" @onclick="() => adding = !adding"><Icon Name="plus" /> Add customer</button>
+        }
+    </Actions>
+</PageHeader>
+
+@if (adding)
+{
+    <section class="card mb-6">
+        <div class="card-header"><div class="card-title">New customer</div></div>
+        <EditForm Model="form" OnValidSubmit="CreateAsync" class="grid gap-4 p-5 sm:grid-cols-2 lg:grid-cols-4">
+            <DataAnnotationsValidator />
+            <div>
+                <label class="label" for="cname">Full name</label>
+                <InputText id="cname" class="input" @bind-Value="form.FullName" />
+                <ValidationMessage For="() => form.FullName" />
+            </div>
+            <div>
+                <label class="label" for="cphone">Phone</label>
+                <InputText id="cphone" class="input num" @bind-Value="form.PhoneNumber" placeholder="0772 123456" />
+                <ValidationMessage For="() => form.PhoneNumber" />
+            </div>
+            <div>
+                <label class="label" for="cemail">Email (optional)</label>
+                <InputText id="cemail" class="input" @bind-Value="form.Email" />
+            </div>
+            <div>
+                <label class="label" for="csite">Home site</label>
+                <InputSelect id="csite" class="input" @bind-Value="form.HomeSiteId">
+                    <option value="">None</option>
+                    @foreach (var site in sites)
+                    {
+                        <option value="@site.Id">@site.Name</option>
+                    }
+                </InputSelect>
+            </div>
+            <div class="flex items-center gap-2 sm:col-span-2 lg:col-span-4">
+                <button type="submit" class="btn btn-primary">Create customer</button>
+                <button type="button" class="btn" @onclick="() => adding = false">Cancel</button>
+                @if (error != null)
+                {
+                    <span class="text-[13px] text-bad">@error</span>
+                }
+            </div>
+        </EditForm>
+    </section>
+}
+
+<div class="mb-4 flex flex-wrap items-center gap-3">
+    <div class="relative w-full sm:w-80">
+        <span class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-faint"><Icon Name="search" Size="15" /></span>
+        <input class="input pl-9" placeholder="Name, phone or email" @bind="search" @bind:after="LoadAsync" aria-label="Search customers" />
+    </div>
+    <div class="segmented" role="group" aria-label="Status">
+        <button class="@(status == null ? "on" : "")" @onclick="() => SetStatus(null)">All</button>
+        <button class="@(status == CustomerStatus.Active ? "on" : "")" @onclick="() => SetStatus(CustomerStatus.Active)">Active</button>
+        <button class="@(status == CustomerStatus.Suspended ? "on" : "")" @onclick="() => SetStatus(CustomerStatus.Suspended)">Suspended</button>
+    </div>
+</div>
+
+<div class="card overflow-hidden">
+    @if (rows == null)
+    {
+        <div class="p-5"><div class="skeleton h-4 w-2/3"></div><div class="skeleton mt-3 h-4 w-1/2"></div></div>
+    }
+    else if (rows.Count == 0)
+    {
+        <EmptyState Icon="users" Title="No customers found" Text="Customers are created automatically when someone pays on the portal, or you can add them here." />
+    }
+    else
+    {
+        <div class="overflow-x-auto">
+            <table class="table">
+                <thead><tr><th>Customer</th><th>Phone</th><th>Current package</th><th>Expires</th><th class="right">Lifetime spend</th><th>Joined</th></tr></thead>
+                <tbody>
+                    @foreach (var row in rows)
+                    {
+                        <tr class="cursor-pointer" @onclick='() => Navigation.NavigateTo($"/customers/{row.Customer.Id}")'>
+                            <td>
+                                <div class="flex items-center gap-2">
+                                    <span class="font-medium">@row.Customer.FullName</span>
+                                    @if (row.Customer.Status != CustomerStatus.Active)
+                                    {
+                                        <span class="badge badge-bad">@row.Customer.Status</span>
+                                    }
+                                </div>
+                            </td>
+                            <td class="num">@PhoneNumbers.Display(row.Customer.PhoneNumber)</td>
+                            <td>
+                                @if (row.CurrentPackage == null)
+                                {
+                                    <span class="text-faint">None</span>
+                                }
+                                else
+                                {
+                                    <span>@row.CurrentPackage</span> <SubscriptionBadge Status="row.CurrentStatus!.Value" />
+                                }
+                            </td>
+                            <td class="text-muted">@(row.ExpiresAt == null ? "—" : Format.Local(row.ExpiresAt))</td>
+                            <td class="right num">@Format.Money(row.LifetimeSpend, "UGX")</td>
+                            <td class="text-muted">@Format.Ago(row.Customer.CreatedAt, Clock.GetUtcNow().UtcDateTime)</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+</div>
+
+@code {
+    private List<CustomerListRow>? rows;
+    private List<Site> sites = [];
+    private string search = "";
+    private CustomerStatus? status;
+    private bool adding;
+    private CustomerForm form = new();
+    private string? error;
+
+    protected override async Task OnInitializedAsync()
+    {
+        sites = await Sites.ListAsync();
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync() => rows = await Customers.ListAsync(search, status);
+
+    private async Task SetStatus(CustomerStatus? value)
+    {
+        status = value;
+        await LoadAsync();
+    }
+
+    private async Task CreateAsync()
+    {
+        var result = await Customers.CreateAsync(form);
+        if (!result.Succeeded)
+        {
+            error = result.Error;
+            return;
+        }
+
+        Navigation.NavigateTo($"/customers/{result.Value!.Id}");
+    }
+}

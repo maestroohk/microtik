@@ -1,0 +1,115 @@
+name: kibo-lab
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: kibo
+      POSTGRES_USER: kibo
+      POSTGRES_PASSWORD: ${KIBO_DB_PASSWORD:?set KIBO_DB_PASSWORD in deploy/.env}
+      KIBO_RADIUS_DB_PASSWORD: ${KIBO_RADIUS_DB_PASSWORD:?set KIBO_RADIUS_DB_PASSWORD in deploy/.env}
+    ports:
+      - "127.0.0.1:55432:5432"
+    volumes:
+      - kibo-pgdata:/var/lib/postgresql/data
+      - ./postgres/init:/docker-entrypoint-initdb.d:ro
+    networks:
+      kibo-lab-wan:
+        ipv4_address: 10.247.0.5
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U kibo -d kibo"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  freeradius:
+    image: freeradius/freeradius-server:3.2.7
+    entrypoint: ["/bin/sh", "/kibo/start.sh"]
+    cpus: 0.5
+    mem_limit: 256m
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      KIBO_RADIUS_DB_PASSWORD: ${KIBO_RADIUS_DB_PASSWORD:?set KIBO_RADIUS_DB_PASSWORD in deploy/.env}
+      KIBO_RADIUS_DEBUG: ${KIBO_RADIUS_DEBUG:-}
+    volumes:
+      - ./freeradius:/kibo:ro
+    ports:
+      - "127.0.0.1:51812:1812/udp"
+      - "127.0.0.1:51813:1813/udp"
+    networks:
+      kibo-lab-wan:
+        ipv4_address: 10.247.0.10
+
+  router-sim-1:
+    image: mcr.microsoft.com/dotnet/aspnet:10.0
+    working_dir: /app
+    command: ["dotnet", "Kibo.Lab.dll"]
+    volumes:
+      - ../lab/sim-publish:/app:ro
+    cpus: 0.5
+    mem_limit: 256m
+    environment:
+      Sim__Identity: lab-sim-kampala
+      Sim__ApiUsername: kibo-api
+      Sim__ApiPassword: ${KIBO_SIM_API_PASSWORD:?set KIBO_SIM_API_PASSWORD in deploy/.env}
+      Sim__RadiusServer: 10.247.0.10
+      Sim__RadiusSecret: ${KIBO_SIM_RADIUS_SECRET_1:?set KIBO_SIM_RADIUS_SECRET_1 in deploy/.env}
+      Sim__NasIpAddress: 10.247.0.21
+      Sim__PublicBaseUrl: http://localhost:58721
+      Sim__PortalBaseUrl: http://localhost:5290
+      Sim__PortalSiteSlug: kampala-connect-ntinda
+      Sim__MomoApiKey: ${KIBO_SIM_MOMO_API_KEY}
+      Sim__MomoCallbackSecret: ${KIBO_SIM_MOMO_CALLBACK_SECRET}
+      ASPNETCORE_URLS: http://+:8080
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "127.0.0.1:58721:8080"
+      - "127.0.0.1:53721:3799/udp"
+    networks:
+      kibo-lab-wan:
+        ipv4_address: 10.247.0.21
+
+  router-sim-2:
+    image: mcr.microsoft.com/dotnet/aspnet:10.0
+    working_dir: /app
+    command: ["dotnet", "Kibo.Lab.dll"]
+    volumes:
+      - ../lab/sim-publish:/app:ro
+    cpus: 0.5
+    mem_limit: 256m
+    environment:
+      Sim__Identity: lab-sim-entebbe
+      Sim__ApiUsername: kibo-api
+      Sim__ApiPassword: ${KIBO_SIM_API_PASSWORD}
+      Sim__RadiusServer: 10.247.0.10
+      Sim__RadiusSecret: ${KIBO_SIM_RADIUS_SECRET_2:?set KIBO_SIM_RADIUS_SECRET_2 in deploy/.env}
+      Sim__NasIpAddress: 10.247.0.22
+      Sim__PublicBaseUrl: http://localhost:58722
+      Sim__PortalBaseUrl: http://localhost:5290
+      Sim__PortalSiteSlug: kampala-connect-entebbe-road
+      Sim__MomoApiKey: ${KIBO_SIM_MOMO_API_KEY}
+      Sim__MomoCallbackSecret: ${KIBO_SIM_MOMO_CALLBACK_SECRET}
+      ASPNETCORE_URLS: http://+:8080
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "127.0.0.1:58722:8080"
+      - "127.0.0.1:53722:3799/udp"
+    networks:
+      kibo-lab-wan:
+        ipv4_address: 10.247.0.22
+
+volumes:
+  kibo-pgdata:
+
+networks:
+  kibo-lab-wan:
+    name: kibo-lab-wan
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 10.247.0.0/24
+          gateway: 10.247.0.1

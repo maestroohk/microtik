@@ -1,0 +1,48 @@
+@using Kibo.Web.Features.Platform
+@inject AuditQuery Audit
+
+<div class="mb-4 relative w-full sm:w-80">
+    <span class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-faint"><Icon Name="search" Size="15" /></span>
+    <input class="input pl-9" placeholder="Action, user or detail" @bind="search" @bind:after="LoadAsync" aria-label="Search audit log" />
+</div>
+
+<div class="card overflow-hidden">
+    @if (entries == null)
+    {
+        <div class="p-5"><div class="skeleton h-4 w-1/2"></div></div>
+    }
+    else if (entries.Count == 0)
+    {
+        <EmptyState Icon="scroll" Title="Nothing recorded yet" Text="Sign-ins, configuration changes, sales and refunds are recorded here." />
+    }
+    else
+    {
+        <div class="overflow-x-auto">
+            <table class="table">
+                <thead><tr><th>When</th><th>Who</th><th>Action</th><th>Details</th></tr></thead>
+                <tbody>
+                    @foreach (var e in entries)
+                    {
+                        <tr>
+                            <td class="whitespace-nowrap text-muted">@Format.Local(e.CreatedAt)</td>
+                            <td class="text-[12.5px]">@e.UserName</td>
+                            <td><span class="badge @(e.Action.Contains("fail") || e.Action.Contains("suspend") || e.Action.Contains("refund") ? "badge-warn" : "")">@e.Action</span></td>
+                            <td class="max-w-[520px] text-[12.5px] text-muted">@e.Details <span class="num text-faint">@e.EntityType @e.EntityId?[..Math.Min(8, e.EntityId.Length)]</span></td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public bool PlatformWide { get; set; }
+
+    private List<Kibo.Web.Data.Entities.AuditLog>? entries;
+    private string search = "";
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync() => entries = await Audit.ListAsync(PlatformWide, search);
+}

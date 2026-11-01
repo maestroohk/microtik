@@ -1,0 +1,21 @@
+<span class="@($"badge badge-dot {Css}")">@Label</span>
+
+@code {
+    [Parameter] public RouterStatus Status { get; set; }
+
+    private string Css => Status switch
+    {
+        RouterStatus.Online => "badge-ok",
+        RouterStatus.Offline => "badge-bad",
+        RouterStatus.AuthenticationFailed => "badge-warn",
+        _ => ""
+    };
+
+    private string Label => Status switch
+    {
+        RouterStatus.Online => "Online",
+        RouterStatus.Offline => "Offline",
+        RouterStatus.AuthenticationFailed => "Auth failed",
+        _ => "Not checked"
+    };
+}

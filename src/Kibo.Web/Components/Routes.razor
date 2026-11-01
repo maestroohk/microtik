@@ -1,0 +1,12 @@
+<Microsoft.AspNetCore.Components.Routing.Router AppAssembly="typeof(Program).Assembly" NotFoundPage="typeof(Pages.NotFound)">
+    <Found Context="routeData">
+        <AuthorizeRouteView RouteData="routeData" DefaultLayout="typeof(Layout.MainLayout)">
+            <NotAuthorized>
+                <RedirectToLogin />
+            </NotAuthorized>
+            <Authorizing>
+                <div class="p-10 text-muted">Checking your session…</div>
+            </Authorizing>
+        </AuthorizeRouteView>
+    </Found>
+</Microsoft.AspNetCore.Components.Routing.Router>

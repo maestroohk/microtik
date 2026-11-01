@@ -1,0 +1,82 @@
+@page "/vouchers/batches/{Id:guid}/print"
+@layout BareLayout
+@attribute [Authorize]
+@attribute [ExcludeFromInteractiveRouting]
+@using Kibo.Web.Features.Packages
+@using Kibo.Web.Features.Routers
+@using Kibo.Web.Features.Vouchers
+@using Microsoft.Extensions.Options
+@using QRCoder
+@inject VoucherService VoucherService
+@inject IOptions<OnboardingOptions> Onboarding
+
+<PageTitle>Vouchers · @batch?.Name</PageTitle>
+<HeadContent>
+    <style>
+        @@page { size: A4; margin: 10mm; }
+        @@media print { .no-print { display: none !important; } body { background: #fff !important; } }
+        .sheet { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+        .ticket { break-inside: avoid; border: 1px dashed #b9bec5; border-radius: 8px; padding: 8px 10px; background: #fff; color: #111; }
+        .ticket svg { width: 64px; height: 64px; }
+    </style>
+</HeadContent>
+
+@if (batch == null)
+{
+    <p class="p-10">Batch not found.</p>
+    return;
+}
+
+<div class="mx-auto max-w-[900px] p-6">
+    <div class="no-print mb-5 flex flex-wrap items-center justify-between gap-3">
+        <div>
+            <h1 class="text-[20px] font-semibold">@batch.Name</h1>
+            <p class="text-muted">@vouchers.Count printable codes (sold and unsold). Cancelled, used and expired codes are left out.</p>
+        </div>
+        <button class="btn btn-primary" onclick="window.print()">Print</button>
+    </div>
+
+    <div class="sheet">
+        @foreach (var voucher in vouchers)
+        {
+            <div class="ticket">
+                <div style="display:flex; gap:8px; align-items:center">
+                    @((MarkupString)Qr(voucher.Code))
+                    <div style="min-width:0">
+                        <div style="font-size:10px; font-weight:600">@(site?.PortalTitle ?? "WiFi")</div>
+                        <div style="font-size:10px; color:#555">@batch.Package?.Name</div>
+                        <div style="font-family: var(--font-mono); font-size:15px; font-weight:700; letter-spacing:0.08em; margin-top:2px">@Display(voucher.Code)</div>
+                        <div style="font-size:9.5px; color:#555">UGX @batch.UnitPrice.ToString("#,0") · use by @batch.RedeemBy.ToString("d MMM yyyy")</div>
+                    </div>
+                </div>
+                <div style="font-size:9px; color:#666; margin-top:5px">Connect to WiFi, open any page, tap "Have a voucher?" and enter the code.</div>
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    [Parameter] public Guid Id { get; set; }
+
+    private VoucherBatch? batch;
+    private List<Voucher> vouchers = [];
+    private Site? site;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var result = await VoucherService.GetBatchAsync(Id);
+        batch = result.Batch;
+        site = result.Site;
+        vouchers = result.Vouchers.Where(v => v.Status is VoucherStatus.Available or VoucherStatus.Sold).ToList();
+    }
+
+    private static string Display(string code) => code.Length == 8 ? $"{code[..4]}-{code[4..]}" : code;
+
+    private string Qr(string code)
+    {
+        var url = site == null ? code : $"{Onboarding.Value.PortalBaseUrl.TrimEnd('/')}/p/{site.Slug}/voucher?code={code}";
+        using var generator = new QRCodeGenerator();
+        using var data = generator.CreateQrCode(url, QRCodeGenerator.ECCLevel.M);
+        return new SvgQRCode(data).GetGraphic(2, "#111111", "#ffffff", drawQuietZones: false);
+    }
+}

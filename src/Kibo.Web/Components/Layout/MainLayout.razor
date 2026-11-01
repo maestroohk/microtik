@@ -1,0 +1,198 @@
+﻿@inherits LayoutComponentBase
+@inject CurrentUser CurrentUser
+@inject IJSRuntime JS
+@inject NavigationManager Navigation
+@inject Kibo.Web.Features.Platform.TenantService Tenants
+@implements IDisposable
+
+<div class="min-h-screen lg:grid lg:grid-cols-[248px_1fr]">
+    <aside class="@(menuOpen ? "fixed inset-0 z-40 flex" : "hidden") lg:sticky lg:top-0 lg:flex lg:h-screen">
+        <div class="absolute inset-0 bg-black/40 lg:hidden" @onclick="() => menuOpen = false"></div>
+        <nav class="relative flex w-[248px] flex-col border-r border-line bg-surface px-3 pb-4" aria-label="Main">
+            <div class="flex h-14 items-center gap-2.5 px-2">
+                <BrandMark Size="26" />
+                <div class="leading-tight">
+                    <div class="text-[15px] font-semibold tracking-tight">Kibo</div>
+                    <div class="text-[11px] text-faint">Network operations</div>
+                </div>
+                <button class="btn btn-ghost btn-sm ml-auto lg:hidden" @onclick="() => menuOpen = false" aria-label="Close menu">
+                    <Icon Name="x" />
+                </button>
+            </div>
+
+            @if (CurrentUser.IsPlatformAdmin)
+            {
+                <div class="mb-3 mt-1 px-1">
+                    <label class="eyebrow mb-1.5 block px-1" for="tenant-switch">Operator</label>
+                    <select id="tenant-switch" class="input h-9 text-[13px]" value="@CurrentUser.TenantId" @onchange="SwitchTenant">
+                        <option value="">Platform view</option>
+                        @foreach (var t in tenantOptions)
+                        {
+                            <option value="@t.Id">@t.Name</option>
+                        }
+                    </select>
+                </div>
+            }
+            else if (tenant != null)
+            {
+                <div class="mx-1 mb-3 mt-1 rounded-lg border border-line bg-surface-2 px-3 py-2.5">
+                    <div class="truncate text-[13px] font-semibold">@tenant.Name</div>
+                    <div class="text-[11.5px] text-muted">@tenant.Plan plan</div>
+                </div>
+            }
+
+            <div class="flex-1 space-y-5 overflow-y-auto">
+                @if (CurrentUser.TenantId != null)
+                {
+                    <div class="space-y-0.5">
+                        <NavLink class="nav-link" href="/" Match="NavLinkMatch.All"><Icon Name="dashboard" /> Overview</NavLink>
+                    </div>
+                    <div class="space-y-0.5">
+                        <div class="eyebrow px-2.5 pb-1.5">Network</div>
+                        <NavLink class="nav-link" href="/routers"><Icon Name="router" /> Routers</NavLink>
+                        <NavLink class="nav-link" href="/sessions"><Icon Name="activity" /> Live sessions</NavLink>
+                    </div>
+                    <div class="space-y-0.5">
+                        <div class="eyebrow px-2.5 pb-1.5">Subscribers</div>
+                        <NavLink class="nav-link" href="/customers"><Icon Name="users" /> Customers</NavLink>
+                        <NavLink class="nav-link" href="/packages"><Icon Name="package" /> Packages</NavLink>
+                        <NavLink class="nav-link" href="/vouchers"><Icon Name="ticket" /> Vouchers</NavLink>
+                    </div>
+                    <div class="space-y-0.5">
+                        <div class="eyebrow px-2.5 pb-1.5">Business</div>
+                        <NavLink class="nav-link" href="/payments"><Icon Name="wallet" /> Payments</NavLink>
+                        <NavLink class="nav-link" href="/sites"><Icon Name="map-pin" /> Sites &amp; portal</NavLink>
+                        <NavLink class="nav-link" href="/audit"><Icon Name="scroll" /> Audit log</NavLink>
+                    </div>
+                }
+                @if (CurrentUser.IsPlatformAdmin)
+                {
+                    <div class="space-y-0.5">
+                        <div class="eyebrow px-2.5 pb-1.5">Platform</div>
+                        <NavLink class="nav-link" href="/platform" Match="NavLinkMatch.All"><Icon Name="building" /> Operators</NavLink>
+                        <NavLink class="nav-link" href="/platform/audit"><Icon Name="shield" /> Platform audit</NavLink>
+                    </div>
+                }
+            </div>
+
+            <div class="mt-3 border-t border-line pt-3">
+                <div class="flex items-center gap-2.5 px-1.5">
+                    <div class="grid size-8 shrink-0 place-items-center rounded-full bg-primary-soft text-[12px] font-semibold text-primary">
+                        @Initials
+                    </div>
+                    <div class="min-w-0 flex-1 leading-tight">
+                        <div class="truncate text-[13px] font-medium">@CurrentUser.Name</div>
+                        <div class="truncate text-[11.5px] text-faint">@(CurrentUser.IsPlatformAdmin ? "Platform admin" : CurrentUser.Role.ToString())</div>
+                    </div>
+                    <form method="post" action="/account/logout">
+                        <AntiforgeryToken />
+                        <button type="submit" class="btn btn-ghost btn-sm px-2" title="Sign out" aria-label="Sign out"><Icon Name="logout" /></button>
+                    </form>
+                </div>
+            </div>
+        </nav>
+    </aside>
+
+    <div class="min-w-0">
+        <header class="sticky top-0 z-30 flex h-14 items-center gap-3 border-b border-line bg-bg/85 px-4 backdrop-blur lg:px-8">
+            <button class="btn btn-ghost btn-sm px-2 lg:hidden" @onclick="() => menuOpen = true" aria-label="Open menu">
+                <Icon Name="menu" Size="18" />
+            </button>
+            <div class="flex items-center gap-2 text-[12.5px] text-muted">
+                @if (tenant?.Status == TenantStatus.Suspended)
+                {
+                    <span class="badge badge-bad badge-dot">Operator suspended</span>
+                }
+                else
+                {
+                    <span class="flex items-center gap-2 text-ok"><span class="live-dot"></span></span>
+                    <span>Live</span>
+                }
+            </div>
+            <div class="ml-auto flex items-center gap-1">
+                <button class="btn btn-ghost btn-sm px-2" @onclick="ToggleTheme" aria-label="Toggle colour theme" title="Toggle theme">
+                    <Icon Name="@(dark ? "sun" : "moon")" />
+                </button>
+            </div>
+        </header>
+
+        <main class="mx-auto w-full max-w-[1400px] px-4 py-6 lg:px-8 lg:py-8">
+            <ErrorBoundary @ref="errorBoundary">
+                <ChildContent>
+                    @if (CurrentUser.TenantId == null && !CurrentUser.IsPlatformAdmin)
+                    {
+                        <EmptyState Icon="alert" Title="No operator account" Text="Your user is not linked to an operator. Contact support." />
+                    }
+                    else
+                    {
+                        @Body
+                    }
+                </ChildContent>
+                <ErrorContent Context="ex">
+                    <div class="card border-bad/40 p-6">
+                        <div class="flex items-start gap-3">
+                            <span class="text-bad"><Icon Name="alert" Size="20" /></span>
+                            <div>
+                                <div class="font-semibold">Something went wrong on this page</div>
+                                <p class="mt-1 text-muted">@(ex is UnauthorizedAccessException ? ex.Message : "The error has been logged. Try again, and contact support if it continues.")</p>
+                                <button class="btn btn-sm mt-4" @onclick="Recover">Try again</button>
+                            </div>
+                        </div>
+                    </div>
+                </ErrorContent>
+            </ErrorBoundary>
+        </main>
+    </div>
+</div>
+
+@code {
+    private bool menuOpen;
+    private bool dark;
+    private Tenant? tenant;
+    private List<Tenant> tenantOptions = [];
+    private ErrorBoundary? errorBoundary;
+
+    private string Initials => string.Concat(CurrentUser.Name.Split(' ', StringSplitOptions.RemoveEmptyEntries)
+        .Take(2).Select(p => char.ToUpperInvariant(p[0])));
+
+    protected override async Task OnInitializedAsync()
+    {
+        Navigation.LocationChanged += OnLocationChanged;
+        tenant = await Tenants.GetCurrentTenantAsync();
+        if (CurrentUser.IsPlatformAdmin)
+        {
+            tenantOptions = (await Tenants.ListAsync()).Select(t => t.Tenant).ToList();
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            dark = await JS.InvokeAsync<bool>("kibo.isDark");
+            StateHasChanged();
+        }
+    }
+
+    private async Task ToggleTheme() => dark = await JS.InvokeAsync<bool>("kibo.toggleTheme");
+
+    private async Task SwitchTenant(ChangeEventArgs e)
+    {
+        var value = e.Value?.ToString();
+        CurrentUser.ImpersonateTenant(Guid.TryParse(value, out var id) ? id : null);
+        tenant = await Tenants.GetCurrentTenantAsync();
+        Navigation.NavigateTo(CurrentUser.TenantId == null ? "/platform" : "/");
+        StateHasChanged();
+    }
+
+    private void Recover() => errorBoundary?.Recover();
+
+    private void OnLocationChanged(object? sender, Microsoft.AspNetCore.Components.Routing.LocationChangedEventArgs e)
+    {
+        menuOpen = false;
+        errorBoundary?.Recover();
+        InvokeAsync(StateHasChanged);
+    }
+
+    public void Dispose() => Navigation.LocationChanged -= OnLocationChanged;
+}

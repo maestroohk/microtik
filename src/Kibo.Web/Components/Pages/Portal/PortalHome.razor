@@ -1,0 +1,102 @@
+@page "/p/{Slug}"
+@layout PortalLayout
+@attribute [ExcludeFromInteractiveRouting]
+@attribute [AllowAnonymous]
+@using Kibo.Web.Features.Packages
+@using Kibo.Web.Features.Portal
+@inject PortalService Portal
+@inject IHttpContextAccessor HttpAccessor
+@inject NavigationManager Navigation
+
+@if (site == null)
+{
+    <PortalMissing />
+    return;
+}
+
+<PortalFrame Site="site">
+    <section class="mb-6">
+        <h1 class="text-[26px] font-semibold leading-tight tracking-tight">@site.Site.PortalTagline</h1>
+        <p class="mt-1.5 text-[var(--portal-muted)]">Pick a package and pay with mobile money. You are online in under a minute.</p>
+    </section>
+
+    @if (!string.IsNullOrEmpty(context.Error))
+    {
+        <div class="mb-5 rounded-2xl border border-[color-mix(in_oklab,#c0344a_30%,transparent)] bg-[color-mix(in_oklab,#c0344a_9%,var(--portal-card))] px-4 py-3 text-[14px]" role="alert">
+            <div class="font-semibold">Could not connect</div>
+            <div class="text-[var(--portal-muted)]">@context.Error</div>
+        </div>
+    }
+
+    @if (site.Tenant.Status != TenantStatus.Active)
+    {
+        <div class="portal-card p-5 text-center">
+            <div class="font-semibold">This hotspot is temporarily unavailable</div>
+            <p class="mt-1 text-[var(--portal-muted)]">Please try again later.</p>
+        </div>
+    }
+    else if (site.Packages.Count == 0)
+    {
+        <div class="portal-card p-5 text-center text-[var(--portal-muted)]">No packages are on sale right now.</div>
+    }
+    else
+    {
+        <ul class="space-y-3" aria-label="Packages">
+            @foreach (var package in site.Packages)
+            {
+                <li>
+                    <a class="pkg" href="/p/@Slug/buy/@package.Id">
+                        <div class="min-w-0 flex-1">
+                            <div class="flex items-center gap-2">
+                                <span class="text-[16px] font-semibold">@package.Name</span>
+                                @if (package.IsPromotional)
+                                {
+                                    <span class="rounded-full bg-[var(--portal-soft)] px-2 py-0.5 text-[11px] font-semibold text-[var(--accent)]">Offer</span>
+                                }
+                            </div>
+                            <div class="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[13px] text-[var(--portal-muted)]">
+                                <span class="inline-flex items-center gap-1"><Icon Name="clock" Size="13" /> @PackageCatalog.DescribeValidity(package.ValidityAmount, package.ValidityUnit)</span>
+                                <span class="inline-flex items-center gap-1"><Icon Name="database" Size="13" /> @PackageCatalog.DescribeData(package.DataQuotaMegabytes)</span>
+                                <span class="inline-flex items-center gap-1"><Icon Name="gauge" Size="13" /> @PackageCatalog.DescribeSpeed(package.DownloadKbps)</span>
+                            </div>
+                            @if (package.AccessWindowStart != null)
+                            {
+                                <div class="mt-1 text-[12.5px] text-[var(--portal-muted)]">Works @package.AccessWindowStart?.ToString("HH:mm")–@package.AccessWindowEnd?.ToString("HH:mm")</div>
+                            }
+                        </div>
+                        <div class="shrink-0 text-right">
+                            <div class="text-[11px] font-medium text-[var(--portal-muted)]">@package.Currency</div>
+                            <div class="text-[20px] font-semibold tabular-nums leading-none">@package.Price.ToString("#,0")</div>
+                        </div>
+                    </a>
+                </li>
+            }
+        </ul>
+    }
+
+    <div class="mt-6 grid grid-cols-2 gap-3">
+        <a href="/p/@Slug/voucher" class="portal-card flex flex-col gap-2 p-4">
+            <span class="grid size-9 place-items-center rounded-lg bg-[var(--portal-soft)] text-[var(--accent)]"><Icon Name="ticket" Size="18" /></span>
+            <span class="font-semibold">Have a voucher?</span>
+            <span class="text-[12.5px] text-[var(--portal-muted)]">Enter the code from your ticket</span>
+        </a>
+        <a href="/p/@Slug/signin" class="portal-card flex flex-col gap-2 p-4">
+            <span class="grid size-9 place-items-center rounded-lg bg-[var(--portal-soft)] text-[var(--accent)]"><Icon Name="phone" Size="18" /></span>
+            <span class="font-semibold">Already paid?</span>
+            <span class="text-[12.5px] text-[var(--portal-muted)]">Sign in with your number and access code</span>
+        </a>
+    </div>
+</PortalFrame>
+
+@code {
+    [Parameter] public string Slug { get; set; } = "";
+
+    private PortalSite? site;
+    private RouterContext context = new(null, null, null, null, null, null, null);
+
+    protected override async Task OnInitializedAsync()
+    {
+        site = await Portal.LoadSiteAsync(Slug);
+        context = Portal.ReadContext(HttpAccessor.HttpContext!);
+    }
+}

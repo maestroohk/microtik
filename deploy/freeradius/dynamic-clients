@@ -1,0 +1,23 @@
+client kibo_lab_routers {
+	ipaddr = 10.247.0.0/24
+	dynamic_clients = dynamic_clients
+	lifetime = 300
+}
+
+server dynamic_clients {
+	authorize {
+		if ("%{sql: SELECT nas_name FROM radius.nas WHERE nas_name = '%{Packet-Src-IP-Address}'}") {
+			update control {
+				&FreeRADIUS-Client-IP-Address = "%{Packet-Src-IP-Address}"
+				&FreeRADIUS-Client-Shortname = "%{sql: SELECT short_name FROM radius.nas WHERE nas_name = '%{Packet-Src-IP-Address}'}"
+				&FreeRADIUS-Client-Secret = "%{sql: SELECT secret FROM radius.nas WHERE nas_name = '%{Packet-Src-IP-Address}'}"
+				&FreeRADIUS-Client-NAS-Type = "other"
+				&FreeRADIUS-Client-Virtual-Server = "default"
+			}
+			ok
+		}
+		else {
+			fail
+		}
+	}
+}

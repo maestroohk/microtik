@@ -1,0 +1,13 @@
+<span class="@($"badge badge-dot {Css}")">@Status</span>
+
+@code {
+    [Parameter] public PaymentStatus Status { get; set; }
+
+    private string Css => Status switch
+    {
+        PaymentStatus.Succeeded => "badge-ok",
+        PaymentStatus.Pending or PaymentStatus.Created => "badge-info",
+        PaymentStatus.Refunded => "badge-warn",
+        _ => "badge-bad"
+    };
+}

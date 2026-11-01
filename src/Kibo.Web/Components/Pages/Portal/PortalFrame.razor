@@ -1,0 +1,45 @@
+@using Kibo.Web.Features.Portal
+
+<PageTitle>@Site.Site.PortalTitle</PageTitle>
+<HeadContent>
+    <meta name="theme-color" content="@Site.Site.PortalAccent" />
+    <style>
+        .portal { --accent: @Site.Site.PortalAccent; }
+    </style>
+</HeadContent>
+
+<div class="mx-auto flex min-h-screen w-full max-w-[460px] flex-col px-4 pb-8">
+    <header class="flex items-center gap-3 pb-5 pt-6">
+        @if (ShowBack)
+        {
+            <a href="/p/@Site.Site.Slug" class="portal-icon-btn" aria-label="Back to packages">
+                <Icon Name="chevron-left" Size="18" />
+            </a>
+        }
+        <div class="grid size-10 place-items-center rounded-xl bg-[var(--accent)] text-white">
+            <Icon Name="wifi" Size="20" Stroke="2" />
+        </div>
+        <div class="min-w-0 leading-tight">
+            <div class="truncate text-[16px] font-semibold">@Site.Site.PortalTitle</div>
+            <div class="truncate text-[12.5px] text-[var(--portal-muted)]">@Site.Site.Location</div>
+        </div>
+    </header>
+
+    <main class="flex-1">
+        @ChildContent
+    </main>
+
+    <footer class="mt-10 space-y-2 text-center text-[12px] text-[var(--portal-muted)]">
+        @if (!string.IsNullOrEmpty(Site.Site.SupportPhone))
+        {
+            <div>Need help? Call or WhatsApp <a class="font-medium text-[var(--portal-ink)] underline" href="tel:@Site.Site.SupportPhone.Replace(" ", "")">@Site.Site.SupportPhone</a></div>
+        }
+        <div>Payments are confirmed with your mobile money provider before you are connected.</div>
+    </footer>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public PortalSite Site { get; set; } = default!;
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+    [Parameter] public bool ShowBack { get; set; }
+}

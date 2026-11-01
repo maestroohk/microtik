@@ -1,0 +1,252 @@
+@page "/"
+@attribute [Authorize]
+@using Kibo.Web.Features.Reports
+@using Kibo.Web.Features.Routers
+@inject DashboardService Reports
+@inject CurrentUser CurrentUser
+@inject RouterLiveUpdates LiveUpdates
+@inject NavigationManager Navigation
+@inject TimeProvider Clock
+@implements IDisposable
+
+@if (CurrentUser.TenantId == null)
+{
+    <PageHeader Title="Overview" />
+    <EmptyState Icon="building" Title="Choose an operator" Text="You are in the platform view. Pick an operator in the sidebar to see their network.">
+        <a class="btn" href="/platform">Open operators</a>
+    </EmptyState>
+    return;
+}
+
+<PageHeader Title="Overview" Subtitle="@($"Network and sales for {Format.Local(Clock.GetUtcNow().UtcDateTime)}")">
+    <Actions>
+        <a class="btn" href="/routers/new"><Icon Name="plus" /> Add router</a>
+        <a class="btn btn-primary" href="/packages/new"><Icon Name="package" /> New package</a>
+    </Actions>
+</PageHeader>
+
+@if (data == null)
+{
+    <div class="grid grid-cols-2 gap-4 lg:grid-cols-4">
+        @for (var i = 0; i < 4; i++)
+        {
+            <div class="card h-[112px] p-4"><div class="skeleton h-3 w-24"></div><div class="skeleton mt-4 h-7 w-20"></div></div>
+        }
+    </div>
+    <div class="skeleton mt-6 h-[300px]"></div>
+    return;
+}
+
+@if (data.HasSyntheticData)
+{
+    <div class="mb-5">
+        <Notice Kind="warn">
+            <span class="font-semibold">Lab data.</span> Some routers are simulators, so their health and traffic figures are synthetic and do not come from RouterOS.
+        </Notice>
+    </div>
+}
+
+<div class="grid grid-cols-2 gap-4 lg:grid-cols-4">
+    <StatCard Label="Revenue today" Value="@Format.Money(data.RevenueToday, data.Currency)" Icon="wallet">
+        <Detail>
+            @if (data.RevenueYesterday > 0)
+            {
+                var change = (data.RevenueToday - data.RevenueYesterday) / data.RevenueYesterday * 100;
+                <span class="@(change >= 0 ? "text-ok" : "text-bad")">@(change >= 0 ? "+" : "")@change.ToString("0")%</span>
+                <span> vs yesterday</span>
+            }
+            else
+            {
+                <span>@Format.Money(data.Revenue30Days, data.Currency) in 30 days</span>
+            }
+        </Detail>
+    </StatCard>
+    <StatCard Label="Active subscribers" Value="@data.ActiveSubscriptions.ToString("N0")" Icon="users">
+        <Detail>@data.ExpiringToday expire today · @data.NewCustomers7Days new this week</Detail>
+    </StatCard>
+    <StatCard Label="Live sessions" Value="@data.ActiveSessions.ToString("N0")" Icon="activity">
+        <Detail>
+            @if (data.FailedLogins24h > 0)
+            {
+                <span class="text-warn">@data.FailedLogins24h rejected logins in 24h</span>
+            }
+            else
+            {
+                <span>No rejected logins in 24h</span>
+            }
+        </Detail>
+    </StatCard>
+    <StatCard Label="Routers online" Value="@($"{data.RoutersOnline}/{data.RoutersTotal}")" Icon="router">
+        <Detail>
+            @if (data.RoutersTotal - data.RoutersOnline > 0)
+            {
+                <span class="text-bad">@(data.RoutersTotal - data.RoutersOnline) need attention</span>
+            }
+            else if (data.RoutersTotal == 0)
+            {
+                <a class="text-primary hover:underline" href="/routers/new">Register your first router</a>
+            }
+            else
+            {
+                <span class="text-ok">All reachable</span>
+            }
+        </Detail>
+    </StatCard>
+</div>
+
+<div class="mt-6 grid gap-6 xl:grid-cols-[1.6fr_1fr]">
+    <section class="card">
+        <div class="card-header">
+            <div>
+                <div class="card-title">Revenue</div>
+                <div class="text-[12px] text-muted">Last 14 days, net of refunds</div>
+            </div>
+            <div class="text-right">
+                <div class="num text-[15px] font-semibold">@Format.Money(data.Revenue14Days.Sum(d => d.Amount), data.Currency)</div>
+                <div class="text-[12px] text-muted">@data.Revenue14Days.Sum(d => d.Sales) sales</div>
+            </div>
+        </div>
+        <div class="p-5">
+            <RevenueChart Days="data.Revenue14Days" Currency="@data.Currency" />
+        </div>
+    </section>
+
+    <section class="card">
+        <div class="card-header">
+            <div class="card-title">Sales by site</div>
+            <span class="text-[12px] text-muted">7 days</span>
+        </div>
+        @if (data.RevenueBySite.Count == 0)
+        {
+            <EmptyState Icon="map-pin" Title="No sales yet" Text="Sales appear here as soon as customers pay on the portal or buy vouchers." />
+        }
+        else
+        {
+            var max = data.RevenueBySite.Max(s => s.Amount);
+            <ul class="space-y-4 p-5">
+                @foreach (var site in data.RevenueBySite)
+                {
+                    <li>
+                        <div class="flex items-baseline justify-between gap-3 text-[13px]">
+                            <span class="truncate font-medium">@site.Site</span>
+                            <span class="num shrink-0">@Format.Money(site.Amount, data.Currency)</span>
+                        </div>
+                        <div class="mt-1.5 h-1.5 rounded-full bg-surface-2">
+                            <div class="h-1.5 rounded-full bg-primary" style="width: @(max == 0 ? 0 : site.Amount / max * 100)%"></div>
+                        </div>
+                        <div class="mt-1 text-[11.5px] text-faint">@site.Sales sales</div>
+                    </li>
+                }
+            </ul>
+        }
+    </section>
+</div>
+
+<div class="mt-6 grid gap-6 xl:grid-cols-2">
+    <section class="card overflow-hidden">
+        <div class="card-header">
+            <div class="card-title">Routers</div>
+            <a class="text-[12.5px] font-medium text-primary hover:underline" href="/routers">View all</a>
+        </div>
+        @if (data.Routers.Count == 0)
+        {
+            <EmptyState Icon="router" Title="No routers yet" Text="Register a MikroTik router to start serving hotspot customers.">
+                <a class="btn btn-primary" href="/routers/new"><Icon Name="plus" /> Add router</a>
+            </EmptyState>
+        }
+        else
+        {
+            <div class="overflow-x-auto">
+                <table class="table">
+                    <thead><tr><th>Router</th><th>Status</th><th>RouterOS</th><th class="right">Last seen</th></tr></thead>
+                    <tbody>
+                        @foreach (var router in data.Routers.Take(6))
+                        {
+                            <tr class="cursor-pointer" @onclick='() => Navigation.NavigateTo($"/routers/{router.Id}")'>
+                                <td>
+                                    <div class="font-medium">@router.Name</div>
+                                    <div class="text-[12px] text-muted">@router.Site?.Name</div>
+                                </td>
+                                <td><RouterStatusBadge Status="router.Status" /></td>
+                                <td class="num text-muted">@(router.RouterOsVersion ?? "—")</td>
+                                <td class="right text-muted">@Format.Ago(router.LastSeenAt, Clock.GetUtcNow().UtcDateTime)</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </section>
+
+    <section class="card overflow-hidden">
+        <div class="card-header">
+            <div class="card-title">Latest payments</div>
+            @if (data.PaymentFailures24h > 0)
+            {
+                <span class="badge badge-warn">@data.PaymentFailures24h failed in 24h</span>
+            }
+            else
+            {
+                <a class="text-[12.5px] font-medium text-primary hover:underline" href="/payments">View all</a>
+            }
+        </div>
+        @if (data.RecentPayments.Count == 0)
+        {
+            <EmptyState Icon="wallet" Title="No payments yet" Text="Mobile money payments from the captive portal will show here." />
+        }
+        else
+        {
+            <div class="overflow-x-auto">
+                <table class="table">
+                    <thead><tr><th>Customer</th><th>Package</th><th>Status</th><th class="right">Amount</th></tr></thead>
+                    <tbody>
+                        @foreach (var p in data.RecentPayments)
+                        {
+                            <tr>
+                                <td>
+                                    <div class="num">@Kibo.Web.Features.Customers.PhoneNumbers.Display(p.Phone)</div>
+                                    <div class="text-[12px] text-muted">@Format.Ago(p.CreatedAt, Clock.GetUtcNow().UtcDateTime)</div>
+                                </td>
+                                <td>@p.PackageName</td>
+                                <td><PaymentBadge Status="p.Status" /></td>
+                                <td class="right num">@Format.Money(p.Amount, p.Currency)</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </section>
+</div>
+
+@code {
+    private DashboardData? data;
+    private Timer? refresh;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (CurrentUser.TenantId == null)
+        {
+            return;
+        }
+
+        data = await Reports.LoadAsync();
+        LiveUpdates.RouterChanged += OnRouterChanged;
+        refresh = new Timer(_ => InvokeAsync(ReloadAsync), null, TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(30));
+    }
+
+    private Task OnRouterChanged(Guid tenantId, Guid routerId) =>
+        tenantId == CurrentUser.TenantId ? InvokeAsync(ReloadAsync) : Task.CompletedTask;
+
+    private async Task ReloadAsync()
+    {
+        data = await Reports.LoadAsync();
+        StateHasChanged();
+    }
+
+    public void Dispose()
+    {
+        LiveUpdates.RouterChanged -= OnRouterChanged;
+        refresh?.Dispose();
+    }
+}

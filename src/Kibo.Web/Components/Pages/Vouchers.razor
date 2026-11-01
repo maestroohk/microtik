@@ -1,0 +1,293 @@
+@page "/vouchers"
+@attribute [Authorize]
+@using Kibo.Web.Features.Packages
+@using Kibo.Web.Features.Sites
+@using Kibo.Web.Features.Vouchers
+@inject VoucherService VoucherService
+@inject AgentService AgentService
+@inject PackageService Packages
+@inject SiteService Sites
+@inject CurrentUser CurrentUser
+
+<PageHeader Title="Vouchers and agents" Subtitle="Printed codes for cash sales. A code works once, only on your routers, and only until its redeem-by date." />
+
+@if (!CurrentUser.Can(Permissions.ManageVouchers) && !CurrentUser.Can(Permissions.SellVouchers))
+{
+    <div class="card"><EmptyState Icon="shield" Title="No voucher access" Text="Ask an owner for voucher permissions." /></div>
+    return;
+}
+
+<div class="mb-5 segmented" role="tablist">
+    <button class="@(tab == "batches" ? "on" : "")" @onclick='() => tab = "batches"'>Batches</button>
+    @if (CurrentUser.Can(Permissions.ManageVouchers))
+    {
+        <button class="@(tab == "agents" ? "on" : "")" @onclick='() => tab = "agents"'>Agents</button>
+    }
+</div>
+
+@if (message != null)
+{
+    <div class="mb-5"><Notice Kind="@(messageOk ? "ok" : "bad")" Text="@message" /></div>
+}
+
+@if (tab == "batches")
+{
+    @if (CurrentUser.Can(Permissions.ManageVouchers))
+    {
+        <section class="card mb-6">
+            <div class="card-header"><div class="card-title">Generate a batch</div></div>
+            <EditForm Model="batchForm" OnValidSubmit="GenerateAsync" class="grid gap-4 p-5 sm:grid-cols-2 xl:grid-cols-6">
+                <DataAnnotationsValidator />
+                <div class="xl:col-span-2">
+                    <label class="label" for="bname">Batch name</label>
+                    <InputText id="bname" class="input" @bind-Value="batchForm.Name" placeholder="Ntinda shop, November" />
+                </div>
+                <div class="xl:col-span-2">
+                    <label class="label" for="bpkg">Package</label>
+                    <InputSelect id="bpkg" class="input" @bind-Value="batchForm.PackageId">
+                        <option value="@Guid.Empty">Choose…</option>
+                        @foreach (var p in packages) { <option value="@p.Id">@p.Name · @Format.Money(p.Price, p.Currency)</option> }
+                    </InputSelect>
+                </div>
+                <div>
+                    <label class="label" for="bqty">Quantity</label>
+                    <InputNumber id="bqty" class="input num" @bind-Value="batchForm.Quantity" />
+                </div>
+                <div>
+                    <label class="label" for="bdays">Redeem within (days)</label>
+                    <InputNumber id="bdays" class="input num" @bind-Value="batchForm.RedeemWithinDays" />
+                </div>
+                <div class="xl:col-span-2">
+                    <label class="label" for="bsite">Site (for the QR link)</label>
+                    <InputSelect id="bsite" class="input" @bind-Value="batchForm.SiteId">
+                        <option value="">Any site</option>
+                        @foreach (var s in sites) { <option value="@s.Id">@s.Name</option> }
+                    </InputSelect>
+                </div>
+                <div class="xl:col-span-2">
+                    <label class="label" for="bagent">Assign to agent</label>
+                    <InputSelect id="bagent" class="input" @bind-Value="batchForm.AgentId">
+                        <option value="">Sold by staff</option>
+                        @foreach (var a in agents.Where(a => a.Agent.IsActive)) { <option value="@a.Agent.Id">@a.Agent.Name</option> }
+                    </InputSelect>
+                </div>
+                <div class="flex items-end xl:col-span-2">
+                    <button class="btn btn-primary w-full" type="submit" disabled="@busy">@(busy ? "Generating…" : "Generate vouchers")</button>
+                </div>
+            </EditForm>
+        </section>
+    }
+
+    <div class="card overflow-hidden">
+        @if (batches == null)
+        {
+            <div class="p-5"><div class="skeleton h-4 w-1/2"></div></div>
+        }
+        else if (batches.Count == 0)
+        {
+            <EmptyState Icon="ticket" Title="No voucher batches" Text="Generate a batch, print it, and sell the codes in shops or through agents." />
+        }
+        else
+        {
+            <div class="overflow-x-auto">
+                <table class="table">
+                    <thead><tr><th>Batch</th><th>Package</th><th class="right">Price</th><th>Agent</th><th>Progress</th><th>Redeem by</th><th></th></tr></thead>
+                    <tbody>
+                        @foreach (var b in batches)
+                        {
+                            var total = Math.Max(1, b.Batch.Quantity);
+                            <tr>
+                                <td><div class="font-medium">@b.Batch.Name</div><div class="text-[12px] text-muted">@b.Batch.Quantity codes · @Format.Local(b.Batch.CreatedAt)</div></td>
+                                <td>@b.PackageName</td>
+                                <td class="right num">@Format.Money(b.Batch.UnitPrice, "UGX")</td>
+                                <td class="text-muted">@(b.AgentName ?? "Staff")</td>
+                                <td class="min-w-[200px]">
+                                    <div class="flex h-1.5 overflow-hidden rounded-full bg-surface-2">
+                                        <div class="bg-ok" style="width:@(b.Redeemed * 100 / total)%"></div>
+                                        <div class="bg-primary" style="width:@(b.Sold * 100 / total)%"></div>
+                                        <div class="bg-faint" style="width:@((b.Cancelled + b.Expired) * 100 / total)%"></div>
+                                    </div>
+                                    <div class="mt-1.5 text-[11.5px] text-muted">@b.Available unsold · @b.Sold sold · @b.Redeemed used@(b.Cancelled > 0 ? $" · {b.Cancelled} cancelled" : "")@(b.Expired > 0 ? $" · {b.Expired} expired" : "")</div>
+                                </td>
+                                <td class="text-muted">@Format.Local(b.Batch.RedeemBy)</td>
+                                <td class="right">
+                                    <div class="flex justify-end gap-1.5">
+                                        @if (b.Available > 0 && CurrentUser.Can(Permissions.SellVouchers))
+                                        {
+                                            @if (sellingBatch == b.Batch.Id)
+                                            {
+                                                <input class="input h-7 w-16 num" type="number" min="1" max="@b.Available" @bind="sellQuantity" aria-label="Quantity to sell" />
+                                                <button class="btn btn-primary btn-sm" @onclick="() => SellAsync(b.Batch.Id)">Sell</button>
+                                            }
+                                            else
+                                            {
+                                                <button class="btn btn-sm" @onclick="() => { sellingBatch = b.Batch.Id; sellQuantity = 1; }">Record sale</button>
+                                            }
+                                        }
+                                        <a class="btn btn-sm" href="/vouchers/batches/@b.Batch.Id/print" target="_blank"><Icon Name="download" Size="13" /> Print</a>
+                                        @if (b.Available > 0 && CurrentUser.Can(Permissions.ManageVouchers))
+                                        {
+                                            <button class="btn btn-ghost btn-sm" title="Cancel unsold codes" @onclick="() => CancelUnsoldAsync(b.Batch.Id)">Void unsold</button>
+                                        }
+                                    </div>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </div>
+}
+else
+{
+    <div class="grid gap-6 xl:grid-cols-[1fr_340px]">
+        <div class="card overflow-hidden">
+            @if (agents.Count == 0)
+            {
+                <EmptyState Icon="users" Title="No agents yet" Text="Agents sell vouchers on commission and hand the cash over later." />
+            }
+            else
+            {
+                <div class="overflow-x-auto">
+                    <table class="table">
+                        <thead><tr><th>Agent</th><th class="right">Sold</th><th class="right">Sales</th><th class="right">Commission</th><th class="right">Cash in</th><th class="right">Owes</th><th></th></tr></thead>
+                        <tbody>
+                            @foreach (var a in agents)
+                            {
+                                <tr class="@(a.Agent.IsActive ? "" : "opacity-60")">
+                                    <td><div class="font-medium">@a.Agent.Name</div><div class="num text-[12px] text-muted">@a.Agent.PhoneNumber · @a.Agent.CommissionPercent.ToString("0.#")%</div></td>
+                                    <td class="right num">@a.VouchersSold</td>
+                                    <td class="right num">@a.Sales.ToString("#,0")</td>
+                                    <td class="right num">@a.Commission.ToString("#,0")</td>
+                                    <td class="right num">@a.CashCollected.ToString("#,0")</td>
+                                    <td class="right num font-semibold @(a.Outstanding > 0 ? "text-warn" : "")">@a.Outstanding.ToString("#,0")</td>
+                                    <td class="right">
+                                        @if (collecting == a.Agent.Id)
+                                        {
+                                            <div class="flex justify-end gap-1.5">
+                                                <input class="input h-7 w-28 num" type="number" @bind="collectAmount" aria-label="Cash received" />
+                                                <button class="btn btn-primary btn-sm" @onclick="() => CollectAsync(a.Agent.Id)">Save</button>
+                                            </div>
+                                        }
+                                        else if (a.Outstanding > 0 && CurrentUser.Can(Permissions.ManageFinance))
+                                        {
+                                            <button class="btn btn-sm" @onclick="() => { collecting = a.Agent.Id; collectAmount = a.Outstanding; }">Record cash</button>
+                                        }
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </div>
+        <section class="card">
+            <div class="card-header"><div class="card-title">Add agent</div></div>
+            <EditForm Model="agentForm" OnValidSubmit="CreateAgentAsync" class="space-y-4 p-5">
+                <DataAnnotationsValidator />
+                <div><label class="label" for="aname">Name</label><InputText id="aname" class="input" @bind-Value="agentForm.Name" /></div>
+                <div><label class="label" for="aphone">Phone</label><InputText id="aphone" class="input num" @bind-Value="agentForm.PhoneNumber" /></div>
+                <div class="grid grid-cols-2 gap-3">
+                    <div><label class="label" for="acomm">Commission %</label><InputNumber id="acomm" class="input num" @bind-Value="agentForm.CommissionPercent" /></div>
+                    <div><label class="label" for="acredit">Credit limit</label><InputNumber id="acredit" class="input num" @bind-Value="agentForm.CreditLimit" /></div>
+                </div>
+                <p class="hint">Sales stop once an agent owes more than the credit limit.</p>
+                <button class="btn btn-primary w-full" type="submit">Add agent</button>
+            </EditForm>
+        </section>
+    </div>
+}
+
+@code {
+    private string tab = "batches";
+    private List<BatchSummary>? batches;
+    private List<AgentSummary> agents = [];
+    private List<Package> packages = [];
+    private List<Site> sites = [];
+    private VoucherBatchForm batchForm = new();
+    private AgentForm agentForm = new();
+    private Guid? sellingBatch;
+    private int sellQuantity = 1;
+    private Guid? collecting;
+    private decimal collectAmount;
+    private bool busy;
+    private string? message;
+    private bool messageOk;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!CurrentUser.Can(Permissions.ManageVouchers) && !CurrentUser.Can(Permissions.SellVouchers))
+        {
+            return;
+        }
+
+        packages = (await Packages.ListAsync(includeInactive: false)).Where(p => p.ServiceType == ServiceType.Hotspot).ToList();
+        sites = await Sites.ListAsync();
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        batches = await VoucherService.ListBatchesAsync();
+        if (CurrentUser.Can(Permissions.ManageVouchers))
+        {
+            agents = await AgentService.ListAsync();
+        }
+    }
+
+    private void Show(bool ok, string? text)
+    {
+        messageOk = ok;
+        message = text;
+    }
+
+    private async Task GenerateAsync()
+    {
+        busy = true;
+        var result = await VoucherService.GenerateAsync(batchForm);
+        busy = false;
+        Show(result.Succeeded, result.Succeeded ? $"{result.Value!.Quantity} vouchers generated. Print them from the batch list." : result.Error);
+        if (result.Succeeded)
+        {
+            batchForm = new VoucherBatchForm();
+        }
+
+        await LoadAsync();
+    }
+
+    private async Task SellAsync(Guid batchId)
+    {
+        var result = await VoucherService.SellAsync(batchId, sellQuantity, null);
+        Show(result.Succeeded, result.Succeeded ? $"{result.Value} voucher(s) recorded as sold." : result.Error);
+        sellingBatch = null;
+        await LoadAsync();
+    }
+
+    private async Task CancelUnsoldAsync(Guid batchId)
+    {
+        var result = await VoucherService.CancelUnsoldInBatchAsync(batchId, "Voided from dashboard");
+        Show(result.Succeeded, $"{result.Value} unsold voucher(s) voided. They can no longer log in.");
+        await LoadAsync();
+    }
+
+    private async Task CreateAgentAsync()
+    {
+        var result = await AgentService.CreateAsync(agentForm);
+        Show(result.Succeeded, result.Succeeded ? $"{result.Value!.Name} added." : result.Error);
+        if (result.Succeeded)
+        {
+            agentForm = new AgentForm();
+        }
+
+        await LoadAsync();
+    }
+
+    private async Task CollectAsync(Guid agentId)
+    {
+        var result = await AgentService.RecordCashCollectionAsync(agentId, collectAmount, null);
+        Show(result.Succeeded, result.Succeeded ? $"Cash recorded. Remaining balance {result.Value:#,0}." : result.Error);
+        collecting = null;
+        await LoadAsync();
+    }
+}

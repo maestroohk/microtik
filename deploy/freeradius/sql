@@ -1,0 +1,39 @@
+sql {
+	dialect = "postgresql"
+	driver = "rlm_sql_postgresql"
+
+	postgresql {
+		send_application_name = yes
+	}
+
+	server = "10.247.0.5"
+	port = 5432
+	login = "kibo_radius"
+	password = $ENV{KIBO_RADIUS_DB_PASSWORD}
+	radius_db = "kibo"
+
+	acct_table1 = "radius.radacct"
+	acct_table2 = "radius.radacct"
+	postauth_table = "radius.radpostauth"
+	client_table = "radius.nas"
+
+	read_groups = no
+	read_profiles = no
+	read_clients = no
+	delete_stale_sessions = yes
+
+	pool {
+		start = 2
+		min = 2
+		max = 16
+		spare = 4
+		uses = 0
+		retry_delay = 5
+		lifetime = 0
+		idle_timeout = 60
+		connect_timeout = 3.0
+		max_retries = 3
+	}
+
+	$INCLUDE ${modconfdir}/${.:name}/main/${dialect}/kibo-queries.conf
+}

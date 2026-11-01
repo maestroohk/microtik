@@ -1,0 +1,139 @@
+@page "/routers"
+@attribute [Authorize]
+@using Kibo.Web.Features.Routers
+@inject RouterService Routers
+@inject RouterLiveUpdates LiveUpdates
+@inject CurrentUser CurrentUser
+@inject NavigationManager Navigation
+@inject TimeProvider Clock
+@implements IDisposable
+
+<PageHeader Title="Routers" Subtitle="MikroTik routers connected to your hotspot and PPPoE service">
+    <Actions>
+        @if (CurrentUser.Can(Permissions.ManageRouters))
+        {
+            <a class="btn btn-primary" href="/routers/new"><Icon Name="plus" /> Add router</a>
+        }
+    </Actions>
+</PageHeader>
+
+@if (routers == null)
+{
+    <div class="card p-5"><div class="skeleton h-4 w-1/3"></div><div class="skeleton mt-4 h-4 w-2/3"></div><div class="skeleton mt-4 h-4 w-1/2"></div></div>
+}
+else if (routers.Count == 0)
+{
+    <div class="card">
+        <EmptyState Icon="router" Title="Connect your first router"
+                    Text="Kibo talks to RouterOS v7 over its REST API for monitoring, and your router sends logins and usage to Kibo's RADIUS server.">
+            <a class="btn btn-primary" href="/routers/new"><Icon Name="plus" /> Add router</a>
+        </EmptyState>
+    </div>
+}
+else
+{
+    <div class="mb-4 flex flex-wrap items-center gap-3">
+        <div class="relative w-full sm:w-72">
+            <span class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-faint"><Icon Name="search" Size="15" /></span>
+            <input class="input pl-9" placeholder="Search name, site or address" @bind="search" @bind:event="oninput" aria-label="Search routers" />
+        </div>
+        <div class="segmented" role="group" aria-label="Filter by status">
+            <button class="@(filter == null ? "on" : "")" @onclick="() => filter = null">All <span class="num text-faint">@routers.Count</span></button>
+            <button class="@(filter == RouterStatus.Online ? "on" : "")" @onclick="() => filter = RouterStatus.Online">Online</button>
+            <button class="@(filter == RouterStatus.Offline ? "on" : "")" @onclick="() => filter = RouterStatus.Offline">Offline</button>
+        </div>
+    </div>
+
+    <div class="card overflow-hidden">
+        <div class="overflow-x-auto">
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>Router</th>
+                        <th>Status</th>
+                        <th>Model</th>
+                        <th>RouterOS</th>
+                        <th>RADIUS source</th>
+                        <th>Hotspot</th>
+                        <th class="right">Last seen</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var router in Filtered)
+                    {
+                        <tr class="cursor-pointer" @onclick='() => Navigation.NavigateTo($"/routers/{router.Id}")'>
+                            <td>
+                                <div class="flex items-center gap-2">
+                                    <span class="font-medium">@router.Name</span>
+                                    @if (router.ApiKind == RouterApiKind.Simulator)
+                                    {
+                                        <span class="badge badge-warn">Simulator</span>
+                                    }
+                                </div>
+                                <div class="text-[12px] text-muted">@router.Site?.Name</div>
+                            </td>
+                            <td>
+                                <RouterStatusBadge Status="router.Status" />
+                                @if (router.Status != RouterStatus.Online && router.ConsecutiveFailures > 0)
+                                {
+                                    <div class="mt-1 text-[11.5px] text-faint">@router.ConsecutiveFailures failed checks</div>
+                                }
+                            </td>
+                            <td class="text-muted">@(router.BoardName ?? "—")</td>
+                            <td class="num text-muted">@(router.RouterOsVersion ?? "—")</td>
+                            <td class="num">@router.NasIpAddress</td>
+                            <td>
+                                @if (router.HotspotPresent == null)
+                                {
+                                    <span class="text-faint">Unknown</span>
+                                }
+                                else if (router.HotspotPresent == true && router.RadiusConfigured == true)
+                                {
+                                    <span class="badge badge-ok">Ready</span>
+                                }
+                                else
+                                {
+                                    <span class="badge badge-warn">Needs setup</span>
+                                }
+                            </td>
+                            <td class="right text-muted">@Format.Ago(router.LastSeenAt, Clock.GetUtcNow().UtcDateTime)</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+        @if (!Filtered.Any())
+        {
+            <div class="px-5 py-10 text-center text-muted">No routers match this filter.</div>
+        }
+    </div>
+}
+
+@code {
+    private List<Router>? routers;
+    private string search = "";
+    private RouterStatus? filter;
+
+    private IEnumerable<Router> Filtered => (routers ?? [])
+        .Where(r => filter == null || r.Status == filter || (filter == RouterStatus.Offline && r.Status == RouterStatus.AuthenticationFailed))
+        .Where(r => string.IsNullOrWhiteSpace(search) ||
+                    r.Name.Contains(search, StringComparison.OrdinalIgnoreCase) ||
+                    (r.Site?.Name ?? "").Contains(search, StringComparison.OrdinalIgnoreCase) ||
+                    r.NasIpAddress.Contains(search) || r.ManagementHost.Contains(search, StringComparison.OrdinalIgnoreCase));
+
+    protected override async Task OnInitializedAsync()
+    {
+        routers = await Routers.ListAsync();
+        LiveUpdates.RouterChanged += OnRouterChanged;
+    }
+
+    private Task OnRouterChanged(Guid tenantId, Guid routerId) => tenantId != CurrentUser.TenantId
+        ? Task.CompletedTask
+        : InvokeAsync(async () =>
+        {
+            routers = await Routers.ListAsync();
+            StateHasChanged();
+        });
+
+    public void Dispose() => LiveUpdates.RouterChanged -= OnRouterChanged;
+}

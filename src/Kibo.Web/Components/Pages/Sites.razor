@@ -1,0 +1,109 @@
+@page "/sites"
+@attribute [Authorize]
+@using Kibo.Web.Features.Routers
+@using Kibo.Web.Features.Sites
+@using Microsoft.Extensions.Options
+@inject SiteService SiteService
+@inject CurrentUser CurrentUser
+@inject IOptions<OnboardingOptions> Onboarding
+
+<PageHeader Title="Sites and portal" Subtitle="Each site has its own captive portal address and branding. Routers belong to a site." />
+
+@if (message != null)
+{
+    <div class="mb-5"><Notice Kind="@(messageOk ? "ok" : "bad")" Text="@message" /></div>
+}
+
+<div class="grid gap-6 xl:grid-cols-[1fr_380px]">
+    <div class="space-y-4">
+        @foreach (var site in sites)
+        {
+            <button class="card flex w-full items-center gap-4 p-4 text-left transition hover:border-line-strong @(selected == site.Id ? "border-primary" : "")" @onclick="() => Select(site)">
+                <span class="grid size-10 shrink-0 place-items-center rounded-xl text-white" style="background:@site.PortalAccent"><Icon Name="wifi" Size="18" /></span>
+                <div class="min-w-0 flex-1">
+                    <div class="font-medium">@site.Name</div>
+                    <div class="truncate text-[12.5px] text-muted">@site.Location</div>
+                </div>
+                <span class="num hidden truncate text-[12px] text-faint sm:block">/p/@site.Slug</span>
+            </button>
+        }
+        @if (CurrentUser.Can(Permissions.ManageSettings))
+        {
+            <button class="btn" @onclick="New"><Icon Name="plus" /> Add site</button>
+        }
+    </div>
+
+    @if (editing)
+    {
+        <section class="card xl:sticky xl:top-20 xl:self-start">
+            <div class="card-header"><div class="card-title">@(selected == null ? "New site" : "Edit site")</div></div>
+            <EditForm Model="form" OnValidSubmit="SaveAsync" class="space-y-4 p-5">
+                <DataAnnotationsValidator />
+                <div><label class="label" for="sname">Site name</label><InputText id="sname" class="input" @bind-Value="form.Name" /></div>
+                <div><label class="label" for="sloc">Location</label><InputText id="sloc" class="input" @bind-Value="form.Location" /></div>
+                <div><label class="label" for="stitle">Portal title</label><InputText id="stitle" class="input" @bind-Value="form.PortalTitle" /></div>
+                <div><label class="label" for="stag">Portal headline</label><InputText id="stag" class="input" @bind-Value="form.PortalTagline" /></div>
+                <div class="grid grid-cols-[1fr_auto] items-end gap-3">
+                    <div><label class="label" for="saccent">Accent colour</label><InputText id="saccent" class="input num" @bind-Value="form.PortalAccent" /><ValidationMessage For="() => form.PortalAccent" /></div>
+                    <input type="color" class="h-9 w-12 cursor-pointer rounded border border-line" value="@form.PortalAccent" @onchange="e => form.PortalAccent = e.Value?.ToString() ?? form.PortalAccent" aria-label="Pick accent colour" />
+                </div>
+                <div><label class="label" for="ssupport">Support phone</label><InputText id="ssupport" class="input num" @bind-Value="form.SupportPhone" /></div>
+                <div class="flex gap-2">
+                    <button class="btn btn-primary flex-1" type="submit">Save</button>
+                    @if (selectedSlug != null)
+                    {
+                        <a class="btn" href="/p/@selectedSlug" target="_blank"><Icon Name="arrow-up-right" Size="14" /> Open portal</a>
+                    }
+                </div>
+                @if (selectedSlug != null)
+                {
+                    <p class="hint">Portal address: <span class="num">@Onboarding.Value.PortalBaseUrl/p/@selectedSlug</span>. RFC 8908 API: <span class="num">/captive-portal/api/@selectedSlug</span></p>
+                }
+            </EditForm>
+        </section>
+    }
+</div>
+
+@code {
+    private List<Site> sites = [];
+    private SiteForm form = new();
+    private Guid? selected;
+    private string? selectedSlug;
+    private bool editing;
+    private string? message;
+    private bool messageOk;
+
+    protected override async Task OnInitializedAsync() => sites = await SiteService.ListAsync();
+
+    private void Select(Site site)
+    {
+        selected = site.Id;
+        selectedSlug = site.Slug;
+        editing = true;
+        form = new SiteForm
+        {
+            Name = site.Name, Location = site.Location, PortalTitle = site.PortalTitle, PortalTagline = site.PortalTagline,
+            PortalAccent = site.PortalAccent, SupportPhone = site.SupportPhone
+        };
+    }
+
+    private void New()
+    {
+        selected = null;
+        selectedSlug = null;
+        editing = true;
+        form = new SiteForm();
+    }
+
+    private async Task SaveAsync()
+    {
+        var result = await SiteService.SaveAsync(selected, form);
+        messageOk = result.Succeeded;
+        message = result.Succeeded ? "Site saved." : result.Error;
+        sites = await SiteService.ListAsync();
+        if (result.Succeeded)
+        {
+            Select(result.Value!);
+        }
+    }
+}

@@ -1,0 +1,18 @@
+<div class="flex flex-col items-center justify-center px-6 py-14 text-center">
+    <div class="mb-4 grid size-11 place-items-center rounded-xl border border-line bg-surface-2 text-muted">
+        <Icon Name="@Icon" Size="20" />
+    </div>
+    <div class="text-[15px] font-semibold">@Title</div>
+    <p class="mt-1 max-w-md text-[13px] text-muted">@Text</p>
+    @if (ChildContent != null)
+    {
+        <div class="mt-5">@ChildContent</div>
+    }
+</div>
+
+@code {
+    [Parameter] public string Icon { get; set; } = "package";
+    [Parameter] public string Title { get; set; } = "";
+    [Parameter] public string Text { get; set; } = "";
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+}

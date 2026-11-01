@@ -1,0 +1,88 @@
+@page "/login"
+@layout BareLayout
+@attribute [ExcludeFromInteractiveRouting]
+@attribute [AllowAnonymous]
+
+<PageTitle>Sign in · Kibo</PageTitle>
+
+<div class="grid min-h-screen lg:grid-cols-[1.05fr_1fr]">
+    <section class="relative hidden overflow-hidden border-r border-line bg-surface lg:flex lg:flex-col lg:justify-between lg:p-12">
+        <div class="flex items-center gap-2.5">
+            <BrandMark Size="30" />
+            <span class="text-[17px] font-semibold tracking-tight">Kibo</span>
+        </div>
+
+        <svg class="pointer-events-none absolute inset-x-0 top-1/2 h-[380px] w-full -translate-y-1/2 opacity-90" viewBox="0 0 600 380" fill="none" aria-hidden="true">
+            <g stroke="var(--border-strong)" stroke-width="1">
+                <path d="M80 300 L220 190 L380 230 L520 110" />
+                <path d="M220 190 L300 80 L520 110" />
+                <path d="M380 230 L470 320" />
+                <path d="M80 300 L170 340" />
+                <path d="M300 80 L140 120 L220 190" />
+            </g>
+            <g>
+                <circle cx="220" cy="190" r="22" fill="var(--primary-soft)" stroke="var(--primary)" />
+                <circle cx="220" cy="190" r="5" fill="var(--primary)" />
+                <circle cx="520" cy="110" r="14" fill="var(--surface)" stroke="var(--border-strong)" />
+                <circle cx="380" cy="230" r="14" fill="var(--surface)" stroke="var(--border-strong)" />
+                <circle cx="300" cy="80" r="10" fill="var(--surface)" stroke="var(--border-strong)" />
+                <circle cx="140" cy="120" r="8" fill="var(--surface)" stroke="var(--border-strong)" />
+                <circle cx="80" cy="300" r="10" fill="var(--surface)" stroke="var(--border-strong)" />
+                <circle cx="470" cy="320" r="8" fill="var(--surface)" stroke="var(--border-strong)" />
+                <circle cx="170" cy="340" r="6" fill="var(--surface)" stroke="var(--border-strong)" />
+                <circle cx="520" cy="110" r="4" fill="var(--ok)" />
+                <circle cx="380" cy="230" r="4" fill="var(--ok)" />
+                <circle cx="80" cy="300" r="4" fill="var(--accent)" />
+            </g>
+        </svg>
+
+        <div class="relative max-w-md">
+            <h2 class="text-[28px] font-semibold leading-tight">Run every hotspot and subscriber from one place.</h2>
+            <p class="mt-3 text-[14.5px] text-muted">Routers, RADIUS, packages, mobile money and vouchers, with each operator's data kept separate.</p>
+        </div>
+    </section>
+
+    <section class="flex items-center justify-center px-5 py-12">
+        <div class="w-full max-w-[380px]">
+            <div class="mb-8 flex items-center gap-2.5 lg:hidden">
+                <BrandMark Size="28" />
+                <span class="text-[17px] font-semibold tracking-tight">Kibo</span>
+            </div>
+            <h1 class="text-[24px] font-semibold">Sign in</h1>
+            <p class="mt-1 text-muted">Use your operator or platform account.</p>
+
+            @if (!string.IsNullOrEmpty(ErrorMessage))
+            {
+                <div class="mt-6"><Notice Kind="bad" Text="@ErrorMessage" /></div>
+            }
+
+            <form method="post" action="/account/login" class="mt-6 space-y-4">
+                <AntiforgeryToken />
+                <input type="hidden" name="returnUrl" value="@ReturnUrl" />
+                <div>
+                    <label class="label" for="email">Email</label>
+                    <input id="email" name="email" type="email" class="input h-10" autocomplete="username" required autofocus />
+                </div>
+                <div>
+                    <label class="label" for="password">Password</label>
+                    <input id="password" name="password" type="password" class="input h-10" autocomplete="current-password" required />
+                </div>
+                <button type="submit" class="btn btn-primary h-10 w-full">Sign in</button>
+            </form>
+            <p class="mt-8 text-[12px] text-faint">Accounts lock for 15 minutes after 5 failed attempts.</p>
+        </div>
+    </section>
+</div>
+
+@code {
+    [SupplyParameterFromQuery] public string? Error { get; set; }
+    [SupplyParameterFromQuery] public string? ReturnUrl { get; set; }
+
+    private string? ErrorMessage => Error switch
+    {
+        "invalid" => "That email and password do not match.",
+        "locked" => "Too many failed attempts. Try again in 15 minutes.",
+        "suspended" => "This operator account is suspended. Contact the platform team.",
+        _ => null
+    };
+}

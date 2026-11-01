@@ -1,0 +1,111 @@
+@page "/sessions"
+@attribute [Authorize]
+@using Kibo.Web.Features.Sessions
+@inject SessionService SessionService
+@inject CurrentUser CurrentUser
+@inject TimeProvider Clock
+@implements IDisposable
+
+<PageHeader Title="Live sessions" Subtitle="Open RADIUS accounting sessions across your routers. Refreshes every 15 seconds.">
+    <Actions>
+        <button class="btn" @onclick="LoadAsync"><Icon Name="refresh" /> Refresh</button>
+    </Actions>
+</PageHeader>
+
+@if (message != null)
+{
+    <div class="mb-4"><Notice Kind="@(messageOk ? "ok" : "bad")" Text="@message" /></div>
+}
+
+<div class="mb-4 relative w-full sm:w-80">
+    <span class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-faint"><Icon Name="search" Size="15" /></span>
+    <input class="input pl-9" placeholder="Search username or MAC" @bind="search" @bind:after="LoadAsync" aria-label="Search sessions" />
+</div>
+
+<div class="card overflow-hidden">
+    @if (sessions == null)
+    {
+        <div class="p-5"><div class="skeleton h-4 w-2/3"></div><div class="skeleton mt-3 h-4 w-1/2"></div></div>
+    }
+    else if (sessions.Count == 0)
+    {
+        <EmptyState Icon="activity" Title="Nobody is online" Text="Sessions appear here as soon as a router sends a RADIUS accounting start." />
+    }
+    else
+    {
+        <div class="overflow-x-auto">
+            <table class="table">
+                <thead>
+                    <tr><th>Subscriber</th><th>Router</th><th>Device</th><th class="right">Online for</th><th class="right">Data</th><th>Last update</th><th></th></tr>
+                </thead>
+                <tbody>
+                    @foreach (var s in sessions)
+                    {
+                        var stale = s.LastUpdate != null && Now - s.LastUpdate.Value > TimeSpan.FromMinutes(3);
+                        <tr>
+                            <td>
+                                <div class="num font-medium">@s.Username</div>
+                                <div class="text-[12px] text-muted">@(s.CustomerName ?? "Voucher / unlinked")</div>
+                            </td>
+                            <td>@s.RouterName</td>
+                            <td class="num text-[12.5px] text-muted">@s.MacAddress<br />@s.IpAddress</td>
+                            <td class="right num">@Format.Duration(s.Seconds)</td>
+                            <td class="right num">@Format.Bytes(s.Bytes)</td>
+                            <td>
+                                <span class="@(stale ? "text-warn" : "text-muted")">@Format.Ago(s.LastUpdate ?? s.StartedAt, Now)</span>
+                            </td>
+                            <td class="right">
+                                @if (CurrentUser.Can(Permissions.DisconnectSessions))
+                                {
+                                    <button class="btn btn-danger btn-sm" disabled="@(busy == s.Username)" @onclick="() => DisconnectAsync(s.Username)">Disconnect</button>
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+</div>
+<p class="mt-3 text-[12px] text-faint">Sessions without an accounting update for 5 minutes are closed automatically as stale (for example after a router loses power).</p>
+
+@code {
+    private List<ActiveSessionView>? sessions;
+    private string search = "";
+    private string? message;
+    private bool messageOk;
+    private string? busy;
+    private Timer? timer;
+
+    private DateTime Now => Clock.GetUtcNow().UtcDateTime;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAsync();
+        timer = new Timer(_ => InvokeAsync(async () => { await LoadAsync(); StateHasChanged(); }), null,
+            TimeSpan.FromSeconds(15), TimeSpan.FromSeconds(15));
+    }
+
+    private async Task LoadAsync() => sessions = await SessionService.ListActiveAsync(search);
+
+    private async Task DisconnectAsync(string username)
+    {
+        busy = username;
+        try
+        {
+            var result = await SessionService.DisconnectFromDashboardAsync(username);
+            messageOk = true;
+            message = $"Disconnected {result.Value} session(s) for {username}.";
+        }
+        catch (InvalidOperationException ex)
+        {
+            messageOk = false;
+            message = ex.Message;
+        }
+
+        busy = null;
+        await LoadAsync();
+    }
+
+    public void Dispose() => timer?.Dispose();
+}

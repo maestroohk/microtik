@@ -1,0 +1,43 @@
+<div>
+    @if (Points.Count < 2)
+    {
+        <div style="height: @(Height)px" class="grid place-items-center rounded-md border border-dashed border-line text-[12px] text-faint">
+            Not enough samples yet
+        </div>
+    }
+    else
+    {
+        <svg viewBox="0 0 @W @Height" preserveAspectRatio="none" class="w-full" style="height: @(Height)px" role="img" aria-label="@Label">
+            <line x1="0" x2="@W" y1="@(Height - 1)" y2="@(Height - 1)" stroke="var(--border)" vector-effect="non-scaling-stroke" />
+            <line x1="0" x2="@W" y1="@(Height / 2)" y2="@(Height / 2)" stroke="var(--border)" stroke-dasharray="3 4" vector-effect="non-scaling-stroke" />
+            <path d="@AreaPath" fill="@Color" fill-opacity="0.1" />
+            <path d="@LinePath" fill="none" stroke="@Color" stroke-width="1.75" vector-effect="non-scaling-stroke" stroke-linejoin="round" />
+        </svg>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public List<double> Points { get; set; } = [];
+    [Parameter] public double? Max { get; set; }
+    [Parameter] public int Height { get; set; } = 80;
+    [Parameter] public string Color { get; set; } = "var(--chart-1)";
+    [Parameter] public string Label { get; set; } = "Chart";
+
+    private const int W = 400;
+
+    private double Top
+    {
+        get
+        {
+            var top = Math.Max(Max ?? 0, Points.Count == 0 ? 0 : Points.Max());
+            return top <= 0 ? 1 : top;
+        }
+    }
+
+    private IEnumerable<(double X, double Y)> Coordinates => Points.Select((p, i) =>
+        (i * (double)W / (Points.Count - 1), Height - 2 - p / Top * (Height - 6)));
+
+    private string LinePath => "M" + string.Join(" L", Coordinates.Select(c => $"{c.X:0.##},{c.Y:0.##}"));
+
+    private string AreaPath => LinePath + $" L{W},{Height} L0,{Height} Z";
+}

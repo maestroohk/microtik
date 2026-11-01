@@ -1,0 +1,21 @@
+@if (!string.IsNullOrEmpty(Text) || ChildContent != null)
+{
+    <div class="@($"flex items-start gap-2.5 rounded-lg border px-3.5 py-3 text-[13px] {Style}")" role="@(Kind == "bad" ? "alert" : "status")">
+        <span class="mt-px shrink-0"><Icon Name="@(Kind == "ok" ? "check" : "alert")" /></span>
+        <div class="min-w-0">@Text @ChildContent</div>
+    </div>
+}
+
+@code {
+    [Parameter] public string? Text { get; set; }
+    [Parameter] public string Kind { get; set; } = "info";
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+
+    private string Style => Kind switch
+    {
+        "ok" => "border-ok/25 bg-ok-soft text-ok",
+        "bad" => "border-bad/25 bg-bad-soft text-bad",
+        "warn" => "border-warn/25 bg-warn-soft text-warn",
+        _ => "border-info/25 bg-info-soft text-info"
+    };
+}

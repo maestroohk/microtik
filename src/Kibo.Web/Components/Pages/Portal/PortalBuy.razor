@@ -1,0 +1,94 @@
+@page "/p/{Slug}/buy/{PackageId:guid}"
+@layout PortalLayout
+@attribute [ExcludeFromInteractiveRouting]
+@attribute [AllowAnonymous]
+@using Kibo.Web.Features.Customers
+@using Kibo.Web.Features.Packages
+@using Kibo.Web.Features.Payments
+@using Kibo.Web.Features.Portal
+@inject PortalService Portal
+@inject PaymentService Payments
+@inject IHttpContextAccessor HttpAccessor
+@inject NavigationManager Navigation
+
+@if (site == null || package == null)
+{
+    <PortalMissing />
+    return;
+}
+
+<PortalFrame Site="site" ShowBack="true">
+    <div class="portal-card p-5">
+        <div class="text-[13px] font-medium text-[var(--portal-muted)]">You are buying</div>
+        <div class="mt-1 flex items-end justify-between gap-3">
+            <div class="text-[22px] font-semibold leading-tight">@package.Name</div>
+            <div class="shrink-0 text-right">
+                <span class="text-[13px] text-[var(--portal-muted)]">@package.Currency</span>
+                <span class="text-[24px] font-semibold tabular-nums">@package.Price.ToString("#,0")</span>
+            </div>
+        </div>
+        <dl class="mt-4 grid grid-cols-3 gap-2 text-center">
+            <div class="rounded-xl bg-[var(--portal-soft)] px-2 py-2.5">
+                <dt class="text-[11px] text-[var(--portal-muted)]">Valid for</dt>
+                <dd class="text-[13.5px] font-semibold">@PackageCatalog.DescribeValidity(package.ValidityAmount, package.ValidityUnit)</dd>
+            </div>
+            <div class="rounded-xl bg-[var(--portal-soft)] px-2 py-2.5">
+                <dt class="text-[11px] text-[var(--portal-muted)]">Data</dt>
+                <dd class="text-[13.5px] font-semibold">@PackageCatalog.DescribeData(package.DataQuotaMegabytes)</dd>
+            </div>
+            <div class="rounded-xl bg-[var(--portal-soft)] px-2 py-2.5">
+                <dt class="text-[11px] text-[var(--portal-muted)]">Devices</dt>
+                <dd class="text-[13.5px] font-semibold">@package.MaxDevices</dd>
+            </div>
+        </dl>
+        @if (package.ValidityStart == ValidityStart.OnFirstLogin)
+        {
+            <p class="mt-3 text-[12.5px] text-[var(--portal-muted)]">The clock starts when you first connect, not when you pay.</p>
+        }
+    </div>
+
+    <form method="post" @formname="buy" @onsubmit="SubmitAsync" class="mt-5 space-y-4">
+        <AntiforgeryToken />
+        <div>
+            <label for="phone" class="mb-2 block text-[14px] font-semibold">Mobile money number</label>
+            <input id="phone" name="Phone" value="@Phone" class="portal-input tabular-nums" type="tel" inputmode="tel"
+                   autocomplete="tel" placeholder="0772 123456" required />
+            <p class="mt-2 text-[12.5px] text-[var(--portal-muted)]">MTN MoMo or Airtel Money. You will get a prompt on this phone to approve.</p>
+        </div>
+        @if (error != null)
+        {
+            <p class="rounded-xl bg-[color-mix(in_oklab,#c0344a_10%,var(--portal-card))] px-4 py-3 text-[14px]" role="alert">@error</p>
+        }
+        <button type="submit" class="portal-btn">Pay @package.Currency @package.Price.ToString("#,0")</button>
+    </form>
+</PortalFrame>
+
+@code {
+    [Parameter] public string Slug { get; set; } = "";
+    [Parameter] public Guid PackageId { get; set; }
+    [SupplyParameterFromForm] public string? Phone { get; set; }
+
+    private PortalSite? site;
+    private Package? package;
+    private string? error;
+
+    protected override async Task OnInitializedAsync()
+    {
+        site = await Portal.LoadSiteAsync(Slug);
+        package = site?.Packages.FirstOrDefault(p => p.Id == PackageId);
+    }
+
+    private async Task SubmitAsync()
+    {
+        var context = Portal.ReadContext(HttpAccessor.HttpContext!);
+        var result = await Payments.StartPortalPurchaseAsync(
+            new PortalPurchaseRequest(Slug, PackageId, Phone ?? "", context.Mac, context.Ip), CancellationToken.None);
+        if (!result.Succeeded)
+        {
+            error = result.Error;
+            return;
+        }
+
+        Navigation.NavigateTo($"/p/{Slug}/pay/{result.Value!.PortalToken}");
+    }
+}

@@ -1,0 +1,112 @@
+@page "/p/{Slug}/signin"
+@layout PortalLayout
+@attribute [ExcludeFromInteractiveRouting]
+@attribute [AllowAnonymous]
+@using Kibo.Web.Features.Packages
+@using Kibo.Web.Features.Portal
+@inject PortalService Portal
+@inject IHttpContextAccessor HttpAccessor
+@inject NavigationManager Navigation
+@inject TimeProvider Clock
+
+@if (site == null)
+{
+    <PortalMissing />
+    return;
+}
+
+<PortalFrame Site="site" ShowBack="true">
+    @if (status == null)
+    {
+        <h1 class="text-[22px] font-semibold">Sign in</h1>
+        <p class="mt-1 text-[var(--portal-muted)]">Use the number you paid with and the access code you were given.</p>
+        <form method="post" @formname="signin" @onsubmit="SubmitAsync" class="mt-5 space-y-4">
+            <AntiforgeryToken />
+            <div>
+                <label for="phone" class="mb-2 block text-[14px] font-semibold">Phone number</label>
+                <input id="phone" name="Phone" value="@Phone" class="portal-input tabular-nums" type="tel" inputmode="tel" autocomplete="tel" required />
+            </div>
+            <div>
+                <label for="code" class="mb-2 block text-[14px] font-semibold">Access code</label>
+                <input id="code" name="AccessCode" class="portal-input font-mono tracking-[0.3em]" inputmode="numeric" autocomplete="one-time-code" maxlength="12" required />
+            </div>
+            @if (error != null)
+            {
+                <p class="rounded-xl bg-[color-mix(in_oklab,#c0344a_10%,var(--portal-card))] px-4 py-3 text-[14px]" role="alert">@error</p>
+            }
+            <button type="submit" class="portal-btn">Continue</button>
+        </form>
+    }
+    else
+    {
+        <div class="portal-card p-5">
+            <div class="text-[13px] text-[var(--portal-muted)]">Your package</div>
+            <div class="mt-0.5 text-[20px] font-semibold">@(status.PackageName ?? "No package yet")</div>
+            @if (status.Status is SubscriptionStatus.Active or SubscriptionStatus.Unused)
+            {
+                <div class="mt-4 space-y-3">
+                    @if (status.ExpiresAt != null)
+                    {
+                        <div class="flex justify-between text-[14px]"><span class="text-[var(--portal-muted)]">Time left</span><span class="font-semibold">@Format.Duration((long)(status.ExpiresAt.Value - Clock.GetUtcNow().UtcDateTime).TotalSeconds)</span></div>
+                    }
+                    else
+                    {
+                        <div class="flex justify-between text-[14px]"><span class="text-[var(--portal-muted)]">Starts</span><span class="font-semibold">When you connect</span></div>
+                    }
+                    @if (status.DataQuotaBytes != null)
+                    {
+                        var left = Math.Max(0, status.DataQuotaBytes.Value - status.UsedBytes);
+                        <div>
+                            <div class="flex justify-between text-[14px]"><span class="text-[var(--portal-muted)]">Data left</span><span class="font-semibold">@Format.Bytes(left)</span></div>
+                            <div class="mt-2 h-2 rounded-full bg-[var(--portal-soft)]"><div class="h-2 rounded-full bg-[var(--accent)]" style="width: @(left * 100 / Math.Max(1, status.DataQuotaBytes.Value))%"></div></div>
+                        </div>
+                    }
+                    @if (status.ScheduledCount > 0)
+                    {
+                        <div class="text-[13px] text-[var(--portal-muted)]">@status.ScheduledCount more package(s) queued after this one.</div>
+                    }
+                </div>
+                @if (loginUrl != null)
+                {
+                    <a class="portal-btn mt-5" href="@loginUrl"><Icon Name="wifi" Size="18" Stroke="2" /> Connect this device</a>
+                }
+                else
+                {
+                    <p class="mt-5 rounded-xl bg-[var(--portal-soft)] px-4 py-3 text-[14px]">Open this page from the WiFi network to connect.</p>
+                }
+            }
+            else
+            {
+                <p class="mt-3 text-[var(--portal-muted)]">Your last package has ended. Buy a new one to get back online.</p>
+                <a class="portal-btn mt-5" href="/p/@Slug">See packages</a>
+            }
+        </div>
+    }
+</PortalFrame>
+
+@code {
+    [Parameter] public string Slug { get; set; } = "";
+    [SupplyParameterFromForm] public string? Phone { get; set; }
+    [SupplyParameterFromForm] public string? AccessCode { get; set; }
+
+    private PortalSite? site;
+    private CustomerStatusView? status;
+    private string? loginUrl;
+    private string? error;
+
+    protected override async Task OnInitializedAsync() => site = await Portal.LoadSiteAsync(Slug);
+
+    private async Task SubmitAsync()
+    {
+        var result = await Portal.FindAccountForLoginAsync(site!.Site.TenantId, Phone ?? "", AccessCode ?? "");
+        if (!result.Succeeded)
+        {
+            error = result.Error;
+            return;
+        }
+
+        var account = result.Value!;
+        status = await Portal.GetStatusAsync(site.Site.TenantId, account.Id);
+        loginUrl = Portal.BuildRouterLoginUrl(Portal.ReadContext(HttpAccessor.HttpContext!), account.Username, account.Password);
+    }
+}

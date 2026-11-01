@@ -1,0 +1,13 @@
+@page "/platform/audit"
+@attribute [Authorize]
+@inject CurrentUser CurrentUser
+
+<PageHeader Title="Platform audit" Subtitle="Activity across every operator, including failed sign-ins and tenant changes." />
+@if (CurrentUser.IsPlatformAdmin)
+{
+    <AuditTable PlatformWide="true" />
+}
+else
+{
+    <div class="card"><EmptyState Icon="shield" Title="Platform administrators only" /></div>
+}

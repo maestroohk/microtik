@@ -1,0 +1,186 @@
+@page "/routers/new"
+@page "/routers/{Id:guid}/edit"
+@attribute [Authorize]
+@using Kibo.Web.Features.Routers
+@using Kibo.Web.Features.Sites
+@inject RouterService Routers
+@inject SiteService Sites
+@inject NavigationManager Navigation
+
+<PageHeader Title="@(Id == null ? "Add router" : "Edit router")"
+            Subtitle="Kibo needs API access for monitoring and a RADIUS source address to accept logins from this router.">
+    <Breadcrumb><a class="hover:text-ink" href="/routers">Routers</a><Icon Name="chevron-right" Size="13" /><span>@(Id == null ? "New" : form.Name)</span></Breadcrumb>
+</PageHeader>
+
+@if (sites == null)
+{
+    <div class="skeleton h-[420px]"></div>
+    return;
+}
+
+<EditForm Model="form" OnValidSubmit="SaveAsync" class="grid gap-6 xl:grid-cols-[1fr_340px]">
+    <DataAnnotationsValidator />
+    <div class="min-w-0 space-y-6">
+        @if (error != null)
+        {
+            <Notice Kind="bad" Text="@error" />
+        }
+
+        <section class="card">
+            <div class="card-header"><div class="card-title">Identity</div></div>
+            <div class="grid gap-5 p-5 sm:grid-cols-2">
+                <div>
+                    <label class="label" for="name">Name</label>
+                    <InputText id="name" class="input" @bind-Value="form.Name" placeholder="Ntinda Market hAP ax²" />
+                    <ValidationMessage For="() => form.Name" />
+                </div>
+                <div>
+                    <label class="label" for="site">Site</label>
+                    <InputSelect id="site" class="input" @bind-Value="form.SiteId">
+                        <option value="@Guid.Empty">Choose a site…</option>
+                        @foreach (var site in sites)
+                        {
+                            <option value="@site.Id">@site.Name</option>
+                        }
+                    </InputSelect>
+                    <p class="hint">The site decides which captive portal customers see.</p>
+                </div>
+            </div>
+        </section>
+
+        <section class="card">
+            <div class="card-header">
+                <div>
+                    <div class="card-title">Management API</div>
+                    <div class="text-[12px] text-muted">RouterOS v7 REST API (www-ssl). Reach it through the router's VPN tunnel address, never a public IP without a firewall rule.</div>
+                </div>
+            </div>
+            <div class="grid gap-5 p-5 sm:grid-cols-[1fr_120px]">
+                <div>
+                    <label class="label" for="host">Host or tunnel address</label>
+                    <InputText id="host" class="input num" @bind-Value="form.ManagementHost" placeholder="10.200.0.14" />
+                    <ValidationMessage For="() => form.ManagementHost" />
+                </div>
+                <div>
+                    <label class="label" for="port">Port</label>
+                    <InputNumber id="port" class="input num" @bind-Value="form.ManagementPort" />
+                </div>
+                <div>
+                    <label class="label" for="user">API username</label>
+                    <InputText id="user" class="input num" @bind-Value="form.ApiUsername" autocomplete="off" />
+                </div>
+                <div class="sm:col-span-2 sm:max-w-md">
+                    <label class="label" for="pass">API password</label>
+                    <InputText id="pass" type="password" class="input" @bind-Value="form.ApiPassword" autocomplete="new-password"
+                               placeholder="@(Id == null ? "" : "Leave blank to keep the stored password")" />
+                    <p class="hint">Encrypted at rest. It is never shown again.</p>
+                </div>
+                <div class="flex flex-wrap gap-x-6 gap-y-3 sm:col-span-2">
+                    <label class="flex items-center gap-2 text-[13px]"><InputCheckbox class="size-4 accent-[var(--primary)]" @bind-Value="form.UseTls" /> Use HTTPS</label>
+                    <label class="flex items-center gap-2 text-[13px]"><InputCheckbox class="size-4 accent-[var(--primary)]" @bind-Value="form.AllowSelfSignedCertificate" /> Accept the router's self-signed certificate</label>
+                    <label class="flex items-center gap-2 text-[13px]">
+                        <InputCheckbox class="size-4 accent-[var(--primary)]" @bind-Value="IsSimulator" /> This is a lab simulator
+                    </label>
+                </div>
+            </div>
+        </section>
+
+        <section class="card">
+            <div class="card-header"><div class="card-title">RADIUS and interfaces</div></div>
+            <div class="grid gap-5 p-5 sm:grid-cols-2">
+                <div>
+                    <label class="label" for="nas">RADIUS source address</label>
+                    <InputText id="nas" class="input num" @bind-Value="form.NasIpAddress" placeholder="10.200.0.14" />
+                    <p class="hint">The address RADIUS packets arrive from. Kibo uses it to identify the router and its operator.</p>
+                    <ValidationMessage For="() => form.NasIpAddress" />
+                </div>
+                <div>
+                    <label class="label" for="coa">CoA / disconnect port</label>
+                    <InputNumber id="coa" class="input num" @bind-Value="form.CoaPort" />
+                    <p class="hint">RouterOS listens on 1700 unless you set <span class="num">/radius incoming port=3799</span>.</p>
+                </div>
+                <div>
+                    <label class="label" for="hs">Hotspot interface</label>
+                    <InputText id="hs" class="input num" @bind-Value="form.HotspotInterface" placeholder="bridge-hotspot" />
+                </div>
+                <div>
+                    <label class="label" for="up">Uplink interface (for traffic graphs)</label>
+                    <InputText id="up" class="input num" @bind-Value="form.UplinkInterface" placeholder="ether1" />
+                </div>
+            </div>
+        </section>
+    </div>
+
+    <aside class="space-y-4">
+        <div class="card p-5 xl:sticky xl:top-20">
+            <div class="card-title">What happens next</div>
+            <ol class="mt-3 space-y-3 text-[13px] text-muted">
+                <li class="flex gap-2.5"><span class="num text-primary">1</span> Kibo creates a RADIUS secret just for this router.</li>
+                <li class="flex gap-2.5"><span class="num text-primary">2</span> You paste the generated onboarding script into the router after reviewing it.</li>
+                <li class="flex gap-2.5"><span class="num text-primary">3</span> Kibo checks the API every minute and records health, version and hotspot readiness.</li>
+            </ol>
+            <p class="mt-4 text-[12px] text-faint">Kibo never changes router configuration on its own.</p>
+            <div class="mt-5 flex gap-2">
+                <button type="submit" class="btn btn-primary flex-1" disabled="@saving">@(saving ? "Saving…" : Id == null ? "Register router" : "Save changes")</button>
+                <a class="btn" href="@(Id == null ? "/routers" : $"/routers/{Id}")">Cancel</a>
+            </div>
+        </div>
+    </aside>
+</EditForm>
+
+@code {
+    [Parameter] public Guid? Id { get; set; }
+
+    private RouterForm form = new();
+    private List<Site>? sites;
+    private string? error;
+    private bool saving;
+
+    private bool IsSimulator
+    {
+        get => form.ApiKind == RouterApiKind.Simulator;
+        set => form.ApiKind = value ? RouterApiKind.Simulator : RouterApiKind.RestApi;
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        sites = await Sites.ListAsync();
+        if (Id != null)
+        {
+            var router = await Routers.GetAsync(Id.Value);
+            if (router == null)
+            {
+                Navigation.NavigateTo("/routers");
+                return;
+            }
+
+            form = new RouterForm
+            {
+                Name = router.Name, SiteId = router.SiteId, ApiKind = router.ApiKind, ManagementHost = router.ManagementHost,
+                ManagementPort = router.ManagementPort, UseTls = router.UseTls,
+                AllowSelfSignedCertificate = router.AllowSelfSignedCertificate, ApiUsername = router.ApiUsername,
+                NasIpAddress = router.NasIpAddress, CoaPort = router.CoaPort, HotspotInterface = router.HotspotInterface,
+                UplinkInterface = router.UplinkInterface
+            };
+        }
+        else if (sites.Count == 1)
+        {
+            form.SiteId = sites[0].Id;
+        }
+    }
+
+    private async Task SaveAsync()
+    {
+        saving = true;
+        error = null;
+        var result = Id == null ? await Routers.RegisterAsync(form) : await Routers.UpdateAsync(Id.Value, form);
+        saving = false;
+        if (!result.Succeeded)
+        {
+            error = result.Error;
+            return;
+        }
+
+        Navigation.NavigateTo($"/routers/{result.Value!.Id}{(Id == null ? "?new=1" : "")}");
+    }
+}

@@ -1,0 +1,9 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Kibo.Lab/Kibo.Lab.csproj" />
+    <Project Path="src/Kibo.Web/Kibo.Web.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Kibo.Tests/Kibo.Tests.csproj" />
+  </Folder>
+</Solution>

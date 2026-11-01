@@ -1,0 +1,158 @@
+@page "/payments"
+@attribute [Authorize]
+@using Kibo.Web.Features.Customers
+@using Kibo.Web.Features.Payments
+@inject BillingService Billing
+@inject CurrentUser CurrentUser
+@inject TimeProvider Clock
+
+<PageHeader Title="Payments" Subtitle="Every mobile money attempt, verified with the provider before access is granted." />
+
+@if (!CurrentUser.Can(Permissions.ViewFinance))
+{
+    <div class="card"><EmptyState Icon="shield" Title="Finance access required" Text="Ask an owner to give you the Finance role." /></div>
+    return;
+}
+
+@if (totals != null)
+{
+    <div class="mb-6 grid grid-cols-2 gap-4 lg:grid-cols-4">
+        <StatCard Label="Collected" Value="@Format.Money(totals.Succeeded, "UGX")"><Detail>@totals.SucceededCount successful payments</Detail></StatCard>
+        <StatCard Label="Awaiting approval" Value="@totals.Pending.ToString()"><Detail>Expire after 10 minutes</Detail></StatCard>
+        <StatCard Label="Failed or expired" Value="@totals.Failed.ToString()"><Detail>No access was granted</Detail></StatCard>
+        <StatCard Label="Refunded" Value="@Format.Money(totals.Refunded, "UGX")"><Detail>Recorded in the ledger</Detail></StatCard>
+    </div>
+}
+
+<div class="mb-4 flex flex-wrap items-center gap-3">
+    <div class="relative w-full sm:w-72">
+        <span class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-faint"><Icon Name="search" Size="15" /></span>
+        <input class="input pl-9" placeholder="Reference, phone or provider ID" @bind="search" @bind:after="LoadAsync" aria-label="Search payments" />
+    </div>
+    <div class="segmented" role="group" aria-label="Status">
+        <button class="@(status == null ? "on" : "")" @onclick="() => SetStatus(null)">All</button>
+        <button class="@(status == PaymentStatus.Succeeded ? "on" : "")" @onclick="() => SetStatus(PaymentStatus.Succeeded)">Succeeded</button>
+        <button class="@(status == PaymentStatus.Pending ? "on" : "")" @onclick="() => SetStatus(PaymentStatus.Pending)">Pending</button>
+        <button class="@(status == PaymentStatus.Failed ? "on" : "")" @onclick="() => SetStatus(PaymentStatus.Failed)">Failed</button>
+    </div>
+    <div class="segmented" role="group" aria-label="Period">
+        @foreach (var days in new[] { 1, 7, 30 })
+        {
+            <button class="@(periodDays == days ? "on" : "")" @onclick="() => SetPeriod(days)">@(days == 1 ? "24h" : $"{days}d")</button>
+        }
+    </div>
+</div>
+
+@if (message != null)
+{
+    <div class="mb-4"><Notice Kind="@(messageOk ? "ok" : "bad")" Text="@message" /></div>
+}
+
+<div class="card overflow-hidden">
+    @if (rows == null)
+    {
+        <div class="p-5"><div class="skeleton h-4 w-2/3"></div></div>
+    }
+    else if (rows.Count == 0)
+    {
+        <EmptyState Icon="wallet" Title="No payments in this period" Text="Change the filters or wait for customers to buy on the portal." />
+    }
+    else
+    {
+        <div class="overflow-x-auto">
+            <table class="table">
+                <thead><tr><th>Reference</th><th>Customer</th><th>Package</th><th>Provider</th><th>Status</th><th class="right">Amount</th><th>When</th><th></th></tr></thead>
+                <tbody>
+                    @foreach (var row in rows)
+                    {
+                        var p = row.Payment;
+                        <tr>
+                            <td class="num text-[12.5px]">@p.Reference</td>
+                            <td class="num">@PhoneNumbers.Display(p.PhoneNumber)<div class="text-[11.5px] text-faint">@PhoneNumbers.Network(p.PhoneNumber)</div></td>
+                            <td>@row.PackageName<div class="text-[12px] text-muted">@row.SiteName</div></td>
+                            <td class="text-[12.5px] text-muted">@p.Provider<div class="num text-[11.5px]">@p.ProviderReference</div></td>
+                            <td>
+                                <PaymentBadge Status="p.Status" />
+                                @if (p.FailureReason != null)
+                                {
+                                    <div class="mt-1 max-w-[220px] text-[11.5px] text-muted">@p.FailureReason</div>
+                                }
+                            </td>
+                            <td class="right num">@Format.Money(p.Amount, p.Currency)</td>
+                            <td class="text-muted">@Format.Local(p.CreatedAt)</td>
+                            <td class="right">
+                                @if (p.Status == PaymentStatus.Succeeded && CurrentUser.Can(Permissions.ManageFinance))
+                                {
+                                    @if (refunding == p.Id)
+                                    {
+                                        <div class="flex min-w-[260px] gap-2">
+                                            <input class="input h-8" placeholder="Reason" @bind="refundReason" />
+                                            <button class="btn btn-danger btn-sm" @onclick="() => RefundAsync(p.Id)">Refund</button>
+                                        </div>
+                                    }
+                                    else
+                                    {
+                                        <button class="btn btn-ghost btn-sm" @onclick="() => StartRefund(p.Id)">Refund…</button>
+                                    }
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+</div>
+
+@code {
+    private List<PaymentRow>? rows;
+    private PaymentTotals? totals;
+    private PaymentStatus? status;
+    private string search = "";
+    private int periodDays = 7;
+    private Guid? refunding;
+    private string refundReason = "";
+    private string? message;
+    private bool messageOk;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (CurrentUser.Can(Permissions.ViewFinance))
+        {
+            await LoadAsync();
+        }
+    }
+
+    private async Task LoadAsync()
+    {
+        var now = Clock.GetUtcNow().UtcDateTime;
+        (rows, totals) = await Billing.ListPaymentsAsync(status, search, now.AddDays(-periodDays), now.AddMinutes(1));
+    }
+
+    private async Task SetStatus(PaymentStatus? value)
+    {
+        status = value;
+        await LoadAsync();
+    }
+
+    private async Task SetPeriod(int days)
+    {
+        periodDays = days;
+        await LoadAsync();
+    }
+
+    private void StartRefund(Guid id)
+    {
+        refunding = id;
+        refundReason = "";
+    }
+
+    private async Task RefundAsync(Guid id)
+    {
+        var result = await Billing.RefundAsync(id, refundReason);
+        messageOk = result.Succeeded;
+        message = result.Succeeded ? $"Refund recorded for {result.Value!.Reference}. Access from this payment was cancelled." : result.Error;
+        refunding = null;
+        await LoadAsync();
+    }
+}
