@@ -1,4 +1,5 @@
 log_user 0
+set send_slow {1 0.05}
 set timeout 240
 set address [lindex $argv 0]
 set gateway [lindex $argv 1]
@@ -24,14 +25,21 @@ send "\r"
 step "logged in with the factory account"
 
 set changed 0
-while {1} {
-    expect {
-        -re {software license.*\[Y/n\]} { send "n\r" }
-        -ex "repeat new password>" { send "$admin\r"; set changed 1 }
-        -ex "new password>" { send "$admin\r" }
-        -re $prompt { break }
-        timeout { step "no shell prompt"; exit 2 }
+expect {
+    -re {software license.*\[Y/n\]} { send "n\r"; exp_continue }
+    -ex "new password>" {
+        sleep 1
+        expect -re {.*}
+        send -s "$admin\r"
+        expect -ex "repeat new password>"
+        sleep 1
+        expect -re {.*}
+        send -s "$admin\r"
+        set changed 1
+        expect -re $prompt
     }
+    -re $prompt {}
+    timeout { step "no shell prompt"; exit 2 }
 }
 step "password set: $changed"
 
@@ -48,7 +56,7 @@ set commands [list \
     "/system ntp client set enabled=yes servers=$gateway" ]
 
 foreach command $commands {
-    send "$command\r"
+    send -s "$command\r"
     expect {
         -re $prompt {}
         timeout { step "timeout"; exit 3 }

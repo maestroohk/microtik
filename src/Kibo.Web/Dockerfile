@@ -11,8 +11,10 @@ RUN mkdir -p wwwroot/css wwwroot/fonts \
 
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src
+COPY src/Kibo.Radius/Kibo.Radius.csproj src/Kibo.Radius/
 COPY src/Kibo.Web/Kibo.Web.csproj src/Kibo.Web/
 RUN dotnet restore src/Kibo.Web/Kibo.Web.csproj
+COPY src/Kibo.Radius/ src/Kibo.Radius/
 COPY src/Kibo.Web/ src/Kibo.Web/
 COPY --from=css /src/wwwroot/css src/Kibo.Web/wwwroot/css
 COPY --from=css /src/wwwroot/fonts src/Kibo.Web/wwwroot/fonts
@@ -21,8 +23,10 @@ RUN dotnet publish src/Kibo.Web/Kibo.Web.csproj -c Release -o /app --no-restore
 FROM mcr.microsoft.com/dotnet/aspnet:10.0
 WORKDIR /app
 COPY --from=build /app .
+RUN mkdir -p /keys && chown app:app /keys
 ENV ASPNETCORE_URLS=http://+:8080 \
     Kibo__DataProtectionKeysPath=/keys
 EXPOSE 8080
 USER app
+HEALTHCHECK --interval=30s --timeout=5s --start-period=60s CMD ["dotnet", "Kibo.Web.dll", "--healthcheck"]
 ENTRYPOINT ["dotnet", "Kibo.Web.dll"]

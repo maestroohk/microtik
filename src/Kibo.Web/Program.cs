@@ -25,6 +25,20 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using System.Threading.RateLimiting;
 
+if (args.Contains("--healthcheck"))
+{
+    using var probe = new HttpClient { Timeout = TimeSpan.FromSeconds(4) };
+    try
+    {
+        using var response = await probe.GetAsync("http://127.0.0.1:8080/healthz");
+        return response.IsSuccessStatusCode ? 0 : 1;
+    }
+    catch (Exception)
+    {
+        return 1;
+    }
+}
+
 var builder = WebApplication.CreateBuilder(args);
 
 var connectionString = builder.Configuration.GetConnectionString("Kibo")
@@ -193,8 +207,19 @@ await using (var scope = app.Services.CreateAsyncScope())
     {
         await scope.ServiceProvider.GetRequiredService<DevelopmentSeeder>().SeedAsync();
     }
+
+    if (args.Contains("--create-platform-admin"))
+    {
+        var email = Environment.GetEnvironmentVariable("KIBO_BOOTSTRAP_ADMIN_EMAIL");
+        var password = Environment.GetEnvironmentVariable("KIBO_BOOTSTRAP_ADMIN_PASSWORD");
+        var result = await PlatformBootstrap.CreateAdminAsync(db, scope.ServiceProvider.GetRequiredService<IPasswordHasher<User>>(),
+            email, password, TimeProvider.System);
+        Console.WriteLine(result);
+        return 0;
+    }
 }
 
 app.Run();
+return 0;
 
 public partial class Program;

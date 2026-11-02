@@ -1,6 +1,6 @@
 # Kibo progress
 
-_Last updated: 2026-11-02_
+_Last updated: 2026-11-02 (production smoke test)_
 
 ## How to run it
 
@@ -25,34 +25,71 @@ All ports bind to 127.0.0.1. The lab uses its own Docker network and does not to
 
 ## Hardening round (2026-11-02): status by evidence
 
-Categories: **RouterOS** = verified on RouterOS CHR · **Simulator** = verified with Kibo.Lab · **Integration** =
-automated test against PostgreSQL/RADIUS code · **Unit** = automated test without database · **Reviewed** =
-code-reviewed only · **Not tested**.
+Categories: **RouterOS** = verified on RouterOS CHR 7.25 in the lab · **Simulator** = verified with Kibo.Lab ·
+**Integration** = automated test against PostgreSQL / the RADIUS SQL · **Unit** = automated test without a
+database · **Reviewed** = code-reviewed only · **Not tested**.
 
+### Accounting and quota
 | Item | Evidence | Notes |
 |---|---|---|
-| Accounting audit findings (router clock trusted, Class unused, stale sessions never reopened, session-ID reuse merge, no wrap detection, full grant per concurrent session, login race) | Reviewed | Fixed in `radius.account` / `radius.evaluate` |
-| `radius.account`: duplicates, reorder, gigawords, wrap, missing start, clock skew, ID reuse, stale reopen, Accounting-On, cross-tenant Class, parallel retransmissions, 10,000-update load test | **Not tested yet** | Tests written (`AccountingTests`); blocked by Docker Desktop (see below) |
-| Concurrent-session grant split, in-flight reserve, pending-login device count | **Not tested yet** | Tests written; same blocker |
-| RADIUS device lockout after 10 rejects | Reviewed | |
-| Fair-use modes (CoA vs router cut-off), overshoot recording | Reviewed | CoA path previously verified in simulator |
-| RADIUS codec: fuzzing found out-of-bounds read on a short packet with a long length field; fixed | Unit | 20,000 random/mutated packets |
-| TOTP MFA (RFC 6238 vectors, replay refusal), MFA required for platform admins outside Development | Unit (TOTP) / Reviewed (login flow) | |
-| Router login URL bound to the site's registered hotspot hosts | Unit | |
-| Router ownership proof, read-only security audit, plan/apply/verify/rollback provisioning | Reviewed | Needs CHR |
-| Accounting health page and reconciliation, operations panel, enforcement-action log | Reviewed (builds) | Needs running stack |
-| Renewal requests safe under duplicate workers (`FOR UPDATE SKIP LOCKED`) | Reviewed | |
-| CHR lab: official images 7.25 (stable) and 7.24.6 (long-term) downloaded; QEMU container, serial bootstrap, client namespaces written | **Not tested** | Same blocker |
-| Production compose and image build | **Not tested** | Same blocker |
-| NuGet dependencies | No known vulnerabilities (`dotnet list package --vulnerable`) | npm audit not yet run |
+| `radius.account`: duplicates, reorder, gigawords, 32-bit wrap, missing start, router clock skew, session-ID reuse, delayed interim, stale reopen, Accounting-On/Off, cross-tenant Class, unknown NAS, parallel retransmissions | Integration | `AccountingTests` |
+| 10,000 interim updates from 4 writers | Integration | About 1,200 updates/s on this laptop; totals exact |
+| Concurrent-session grant split, in-flight reserve, pending-login device count | Integration | |
+| Upload/download direction (Acct-Input = upload), `Class` echoed back, 64-bit totals | RouterOS | |
+| 20 MB hard cap | RouterOS | Router cut the session itself; overshoot under 2 KB; cause `NAS-Request`; re-login rejected with Kibo's message |
+| Graceful reboot: Stop (`Admin-Reboot`) then Accounting-On | RouterOS | Handled idempotently |
+| Power cut: orphaned session closed by Accounting-On (`NAS-Reboot`) | RouterOS | |
+| Simultaneous use: second device refused | RouterOS | |
+| RADIUS outage: new logins fail clearly, live sessions continue, recovery | RouterOS | |
+| Usage confidence (Final / Live / Delayed / Router unreachable) on the customer page and accounting health page | Integration (classification), browser (badge) | Missing usage is never shown as a settled zero |
+| Device lockout after 10 rejects in 10 minutes | Reviewed | |
+| Fair use `RateChange`: dynamic queue holds the package rate; CoA by Framed-IP changes it to the fair-use rate | RouterOS | Sent with `radclient` from the configured RADIUS address |
+| Fair use: Kibo's own CoA packet reaching the router | **Not tested** | The lab forwarder changes the source address and RouterOS drops it; Kibo fell back to an API disconnect (RouterOS) and recorded 149 KB overshoot at a 30 s interval |
+| Fair use `RouterCutoff` | Integration | SQL sends the threshold as `Mikrotik-Total-Limit` |
 
-**Current blocker:** Docker Desktop 4.86 fails at startup ("initializing Inference manager … dockerInference:
-The file cannot be accessed by the system"). The stale socket file has been deleted, but the running Docker
-Desktop instance is stuck on its error dialog and must be quit and started again from the system tray.
+### Bypass resistance
+| Item | Evidence | Notes |
+|---|---|---|
+| Printed access code typed into the router's own login page is refused (hidden router secret) | RouterOS | Portal login with the same code works |
+| Local hotspot user bypasses RADIUS (`radius=false`) and the audit flags it | RouterOS | |
+| Audit: MAC/trial login, bypassed bindings, open walled garden, extra RADIUS servers, CoA off, FastTrack, IPv6, telnet/ftp, unrestricted services, PPP secrets, old RouterOS | RouterOS (run on a real config, false positives fixed) | FastTrack and IPv6 findings come from configuration reads, not traffic tests |
+| IPv6 traffic bypass, DNS tunnelling through the walled garden, FastTrack counter loss | **Not tested** | |
+| Router login URL bound to the site's registered hotspot hosts | Unit | Userinfo tricks rejected |
+| Portal rate limits behind hotspot NAT (per browser + per IP) | Simulator, browser | |
 
-Host: i7-13650HX, 39.6 GB RAM, Windows hypervisor active (WSL2), VirtualBox 7.0.12 with host-only network
-192.168.56.0/24, no Hyper-V management tools. CHR runs under QEMU inside a lab container so each router keeps its
-own lab address; no host networking changes are needed.
+### Router trust and provisioning
+| Item | Evidence | Notes |
+|---|---|---|
+| Ownership proof (claim note + software/system ID); RADIUS client created only afterwards | RouterOS | Found and fixed: RADIUS client rows were created without a tenant (now refused by `GuardTenantOwnership`; Integration test) |
+| Plan, backup, apply, verify; `login.html` upload over REST | RouterOS | |
+| Rollback, including a partially failed rollback reported as such | RouterOS | |
+| REST quirks: Content-Length bodies, unescaped item IDs, `system-id`, `available-from` | RouterOS | All handled in `RouterOsClient` |
+| `kibo-api` group can write files | RouterOS | RouterOS least-privilege limit, documented |
+| PPPoE on CHR | **Not tested** | Simulator only (first round) |
+| RouterOS 7.24.6 (long-term) | **Not tested** | Boots; the serial bootstrap loses characters under emulation |
+
+### Application and deployment security
+| Item | Evidence | Notes |
+|---|---|---|
+| RADIUS codec fuzzing (fixed an out-of-bounds read) | Unit | 20,000 packets |
+| TOTP (RFC 6238 vectors, replay refusal) | Unit | |
+| Platform admin needs two-step sign-in; without it, operator pages show a set-up prompt | Production container + curl | Found and fixed: a new admin got HTTP 500 on every page |
+| First-admin bootstrap (`--create-platform-admin`) | Integration + production container | Weak password and a second admin are refused |
+| Production image build, migrations on an empty database, `/healthz`, Caddy TLS (internal CA on localhost), HTTP to HTTPS redirect, CSP/frame headers, secure cookies | Production compose (localhost only) | Fixed: `Kibo.Radius` missing from the image, no `.dockerignore`, health check relied on `wget` |
+| Session survives a web restart and an image rebuild (persistent data-protection keys) | Production compose | |
+| Graceful shutdown | Production compose | Exit code 0 |
+| `pg_dump` / `pg_restore` round trip with RADIUS grants intact | Production compose | |
+| FreeRADIUS starts inside the WireGuard namespace and connects to PostgreSQL; the WireGuard hub generates peer configs | Production compose | No router has connected through a tunnel yet |
+| Renewal requests under duplicate workers (`FOR UPDATE SKIP LOCKED`) | Reviewed | |
+| Worker crash, payment provider outage, replay through the UI | **Not tested** | |
+| Dependencies | NuGet: no known vulnerabilities; npm audit: 0 | |
+
+Automated tests: **83 passing** (`dotnet test`, needs the lab PostgreSQL).
+
+Lab limitations: no KVM, so CHR runs under QEMU emulation (one core per router); Docker Desktop does not pass the
+VM's ARP broadcasts, so `lab/chr/lab-arp.sh` pins entries after each start; Kibo's CoA goes through a forwarder
+that RouterOS does not accept as its RADIUS server. Host: i7-13650HX, 39.6 GB RAM, WSL2; no host networking was
+changed.
 
 ## Completed and tested (first round)
 
@@ -82,34 +119,31 @@ own lab address; no host networking changes are needed.
 | Role-aware navigation and dashboard; RBAC enforced in services | Done | Network engineer blocked from payments, reports, staff |
 | Tenant isolation in the UI and operator suspension | Done | Second operator sees nothing of the first; suspended owner refused |
 | Customer device history (MAC, for support only) | Done | Recorded from live accounting |
-| Production compose (Caddy TLS, WireGuard hub, web image) | Written | **Not yet built or run** |
+| Production compose (Caddy TLS, WireGuard hub, web image) | Done | Smoke-tested on localhost (see above) |
 
-Automated tests: **49 passing** (`dotnet test`): business rules, phone/duration parsing, CHAP hashing, login-URL
+First-round automated tests: **49 passing** (`dotnet test`): business rules, phone/duration parsing, CHAP hashing, login-URL
 allow-list, tenant isolation, RADIUS SQL decisions (tenant scoping, remaining bytes/time, FUP, expiry,
 suspension, fair-use without byte cap), payment idempotency under concurrency, amount mismatch, append-only ledger,
 RADIUS codec (CoA vendor attributes, authenticators, PAP encryption).
 
 ## Known limitations
 
-* **No real RouterOS verified yet.** All router behaviour above is from the Kibo simulator. Next step: run
-  CHR in Hyper-V/VirtualBox (free licence, 1 Mbps) and repeat the lab script.
 * Real MTN MoMo / Airtel Money adapters are not written (only `sim-momo`). Refunds are recorded, not sent to a
   provider.
-* Fair-use is a soft threshold: detection waits for the next interim update (60 s) plus the 15 s worker, so a
-  fast customer can exceed the threshold before being slowed. Hard caps (no fair-use speed) are enforced by the
-  router itself via `Mikrotik-Total-Limit`.
-* The production compose file and web Dockerfile are untested.
-* `login.html` passes the CHAP challenge in the query string; confirm against real RouterOS escaping.
-* Per-subscription usage queries run every 15 s; for thousands of concurrent subscribers this should become a
-  set-based query plus an index on `(username, acctstarttime)`.
+* Fair-use `RateChange` overshoot is (accounting interval + up to 15 s) x speed; use `RouterCutoff` when an exact
+  threshold matters.
+* Several sessions on one subscription share the remaining bytes by splitting; exact aggregate enforcement across
+  sessions or routers is not claimed.
+* PPPoE, IPv6 bypass and FastTrack effects have not been exercised on RouterOS; 7.24.6 is not bootstrapped.
+* Kibo's own CoA has not reached a real router (lab limitation); `radclient` CoA from the RADIUS address works.
 * The simulated mobile money provider keeps transactions in memory; restarting it makes pending payments fail
   safely.
 * Platform admin tenant switching lasts for the browser tab's session only.
 
 ## Next steps
 
-1. CHR lab on Hyper-V with an isolated internal switch; verify hotspot redirect, CHAP login, limits, CoA port.
-2. MTN MoMo Collections and Airtel Money adapters behind `IPaymentProvider` (sandbox only).
-3. Build and smoke-test the production compose; add backups and metrics.
-4. Set-based usage aggregation for large subscriber counts.
-5. Opt-in automated provisioning per router, tested against CHR first.
+1. Send Kibo's CoA from the RADIUS address in the lab (or over a WireGuard peer) and verify end-to-end throttling.
+2. PPPoE and IPv6 tests on CHR; FastTrack accounting comparison.
+3. Connect a CHR to the production WireGuard hub.
+4. MTN MoMo Collections and Airtel Money adapters behind `IPaymentProvider` (sandbox only).
+5. Worker-crash and provider-outage drills.

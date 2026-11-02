@@ -1,0 +1,8 @@
+services:
+  wireguard:
+    ports: !override
+      - "127.0.0.1:51820:51820/udp"
+  caddy:
+    ports: !override
+      - "127.0.0.1:47080:80"
+      - "127.0.0.1:47443:443"

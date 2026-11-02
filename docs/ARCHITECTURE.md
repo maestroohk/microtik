@@ -129,7 +129,8 @@ _Code-reviewed against RFC 2866; must be confirmed on CHR._
   router), and a software ID can belong to only one router across all tenants.
 * **Provisioning is plan → approve → backup → apply → verify → roll back.** Kibo only adds items commented
   `kibo-managed` or sets the specific properties shown in the plan (RADIUS client, `radius incoming`, hotspot
-  profile RADIUS/accounting/login methods, portal walled-garden host, PPP AAA, the claim note). Firewall, NAT,
+  profile RADIUS/accounting/login methods, portal walled-garden host plus an IP walled-garden entry for the portal
+  port (without it the portal is unreachable before login on RouterOS 7.25), `login.html`, PPP AAA, the claim note). Firewall, NAT,
   DHCP, routing, VLANs and users are never touched. A plan older than 15 minutes must be recreated. An `/export`
   backup is stored encrypted before applying. After applying, the plan is recomputed; any remaining difference
   rolls back every step in reverse. RouterOS has no transactions, so a rollback can itself fail; that state is
@@ -140,6 +141,12 @@ _Code-reviewed against RFC 2866; must be confirmed on CHR._
   services, and RouterOS older than 7.10.
 * Production routers connect over a per-router WireGuard tunnel; RADIUS, CoA and REST all use tunnel addresses.
   RouterOS listens for CoA on UDP 1700 unless configured; the port is stored per router.
+* REST details confirmed on RouterOS 7.25: request bodies must be sent with a `Content-Length` (chunked bodies are
+  read as empty); item IDs (`*1`, files `**…`) must not be URL-escaped and are validated before use;
+  `/system/license` returns `system-id` on CHR instead of `software-id`; `available-from` replaces `address` on
+  `/ip/service` reads.
+* The `kibo-api` group (`read,write,api,rest-api,test`) can still write files; RouterOS has no narrower policy for
+  the hotspot and RADIUS settings Kibo manages.
 * Health checks back off exponentially (30 s → 15 min) so dead routers cost little. Router-down vs platform-down
   is visible from connection events and `LastError`.
 
@@ -149,9 +156,15 @@ _Code-reviewed against RFC 2866; must be confirmed on CHR._
   walled garden).
 * Router context (MAC, login URL, CHAP challenge) arrives in the query string from `login.html` and is kept in a
   data-protected cookie. The final login uses a **CHAP hash**, never the plain code, and the login URL must be a
-  private/hotspot address (prevents a crafted link from sending credentials elsewhere).
+  hotspot host registered for that site (prevents a crafted link from sending credentials elsewhere).
+* **The code a customer sees is never the RADIUS password.** Hotspot and voucher logins use a hidden per-account
+  `RouterSecret`; the portal checks the customer's code and then performs the router login with the secret. A
+  CHAP exchange sniffed on the hotspot LAN therefore cannot be brute-forced back to a 6-digit code, and typing
+  the printed code straight into the router's own login page fails (verified on RouterOS 7.25).
 * MAC addresses are recorded for support only; identity is phone + access code, voucher code, or payment token.
-* Portal POSTs and staff sign-in are rate-limited per client IP; staff accounts lock after 5 failures.
+* Rate limits are chained: 10 portal POSTs per minute per browser (client IP + portal cookie) and 300 per minute
+  per IP, because every customer behind a hotspot shares the router's NAT address. Staff accounts lock after 5
+  failures; platform administrators must use TOTP two-step sign-in outside Development.
 
 ### Tenancy and permissions
 * Every tenant-owned table has `TenantId`; `AppDbContext` applies global query filters and refuses to save rows
@@ -167,21 +180,47 @@ _Code-reviewed against RFC 2866; must be confirmed on CHR._
 
 ### Mid-session changes
 `DynamicAuthorizationClient` sends RFC 5176 CoA and Disconnect requests to the router's tunnel address and stored
-CoA port, signed with that router's RADIUS secret. Fair-use throttling uses CoA (`Mikrotik-Rate-Limit`); if the
+CoA port, signed with that router's RADIUS secret. Sessions are identified by `Framed-IP-Address`: RouterOS 7.25
+NAKs requests that carry only `User-Name` (`Unsupported-Extension`) and silently drops packets from a source other
+than its configured RADIUS server. After a rate CoA, Kibo reads the `<hotspot-USER>` queue to confirm the new
+limit. Fair-use throttling uses CoA (`Mikrotik-Rate-Limit`); if the
 router does not acknowledge, Kibo disconnects so the next login gets the throttled rate. Disconnects use the
 RouterOS API first and fall back to RADIUS Disconnect-Request. Packages with a fair-use speed are not sent a
 `Mikrotik-Total-Limit`, otherwise the router would cut the customer off instead of slowing them down.
 
 ## Deployment
 `deploy/docker-compose.prod.yml`: PostgreSQL, FreeRADIUS (sharing the WireGuard container's network namespace, so
-RADIUS is only reachable through router tunnels), the web app image (`src/Kibo.Web/Dockerfile`, Tailwind built
-in a Node stage), and Caddy for automatic TLS. Data-protection keys live in a volume; losing them makes stored
-router API passwords unreadable (re-enter them). Back up PostgreSQL daily (`pg_dump`); it holds everything.
-Set `KIBO_TUNNEL_SUBNET` so FreeRADIUS only accepts dynamic clients from tunnel addresses.
+RADIUS is only reachable through router tunnels), a WireGuard hub (one peer per site), the web app image
+(`src/Kibo.Web/Dockerfile`, Tailwind built in a Node stage, runs as a non-root user, built-in health probe
+`--healthcheck`), and Caddy for automatic TLS on a fixed backend address that is the only trusted proxy.
+Settings: `deploy/.env.production.example`. Only 80/443 and WireGuard 51820/udp are published.
+
+* First administrator: `docker compose run --rm -e KIBO_BOOTSTRAP_ADMIN_EMAIL=… -e KIBO_BOOTSTRAP_ADMIN_PASSWORD=…
+  web --create-platform-admin` (refuses if an administrator exists; password ≥ 16 characters). Until that
+  administrator turns on two-step sign-in, operator management shows a prompt to do so.
+* Data-protection keys live in the `keys` volume; losing them signs everyone out and makes stored router API
+  passwords unreadable (re-enter them).
+* Backup: `pg_dump -Fc` daily; restore with `pg_restore --no-owner` into a database on a server where the
+  `kibo_radius` role exists (the init script creates it). Grants on the `radius` schema survive the round trip.
+* Upgrade: build the new image and `up -d`; migrations run at start-up and are forward-only. Rollback means the
+  previous image **and** the pre-upgrade database dump.
+* Local smoke test without exposing anything: `deploy/docker-compose.smoke.yml` rebinds Caddy to
+  127.0.0.1:47080/47443 and WireGuard to 127.0.0.1 with `KIBO_PUBLIC_HOST=localhost` (Caddy's internal CA).
+
+## RouterOS lab
+`deploy/docker-compose.yml --profile chr` runs official CHR images (7.25 and 7.24.6) under QEMU inside Alpine
+containers on the isolated `kibo-lab-wan` network (10.247.0.0/24). Each container bridges its eth0 into the VM and
+gives the VM a second, internal hotspot LAN with network-namespace "phones" (`phone-voucher.sh` runs the full
+DHCP → redirect → portal → voucher → router login → internet check). First boot is configured over the serial
+console (`bootstrap.exp`, secrets from `deploy/.env`, console echo suppressed). Docker Desktop's bridge does not
+deliver the VM's ARP broadcasts, so `lab-arp.sh` pins the gateway, FreeRADIUS and file-server entries after every
+container start. `chr-gateway` forwards REST and CoA ports to 127.0.0.1 only. No host adapter, route, DNS or
+firewall setting is changed; there is no KVM, so each router uses most of one CPU core while running.
 
 ## Configuration
 Non-secret settings: `appsettings*.json`. Secrets: `dotnet user-secrets` (development) or environment variables.
 Lab container secrets: `deploy/.env` (git-ignored; template in `deploy/.env.example`).
 
 ## Known gaps (tracked in PROGRESS.md)
-Real mobile money adapters, automated provisioning, CHR verification, an untested production compose.
+Real mobile money adapters; PPPoE, IPv6 and FastTrack behaviour not yet exercised on CHR; RouterOS 7.24.6 not
+bootstrapped; WireGuard peers not yet tested with a real router.

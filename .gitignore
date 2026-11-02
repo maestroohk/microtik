@@ -491,3 +491,4 @@ src/Kibo.Web/wwwroot/css/app.css
 node_modules/
 lab/sim-publish/
 lab/chr/images/
+deploy/wireguard/

@@ -19,6 +19,14 @@
     return;
 }
 
+@if (!Tenants.PlatformAccessReady)
+{
+    <div class="card"><EmptyState Icon="shield" Title="Turn on two-step sign-in first"
+        Text="Operator management needs a sign-in with an authenticator code. Set it up under Sign-in security, then sign in again." /></div>
+    <a class="btn btn-primary mt-4" href="/account/security">Open sign-in security</a>
+    return;
+}
+
 @if (message != null)
 {
     <div class="mb-5"><Notice Kind="@(messageOk ? "ok" : "bad")" Text="@message" /></div>
@@ -144,7 +152,7 @@
 
     protected override async Task OnInitializedAsync()
     {
-        if (CurrentUser.IsPlatformAdmin)
+        if (Tenants.PlatformAccessReady)
         {
             tenants = await Tenants.ListAsync();
         }

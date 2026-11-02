@@ -184,7 +184,7 @@
     {
         Navigation.LocationChanged += OnLocationChanged;
         tenant = await Tenants.GetCurrentTenantAsync();
-        if (CurrentUser.IsPlatformAdmin)
+        if (Tenants.PlatformAccessReady)
         {
             tenantOptions = (await Tenants.ListAsync()).Select(t => t.Tenant).ToList();
         }

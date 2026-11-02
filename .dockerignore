@@ -1,0 +1,12 @@
+**/bin/
+**/obj/
+**/node_modules/
+.git/
+.vs/
+lab/
+deploy/
+tests/
+docs/
+**/*.env
+**/.env
+src/Kibo.Web/wwwroot/css/app.css

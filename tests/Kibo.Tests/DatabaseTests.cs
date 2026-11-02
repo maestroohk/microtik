@@ -1,6 +1,8 @@
 using Kibo.Web.Data;
 using Kibo.Web.Data.Entities;
 using Kibo.Web.Features.Payments;
+using Kibo.Web.Features.Platform;
+using Microsoft.AspNetCore.Identity;
 using Kibo.Web.Features.Subscriptions;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
@@ -30,6 +32,26 @@ public class DatabaseTests(TestDatabase database)
         Assert.Contains("Alice", names);
         Assert.DoesNotContain("Bob", names);
         Assert.All(routers, id => Assert.Equal(a.Id, id));
+    }
+
+    [Fact]
+    public async Task Platform_admin_bootstrap_creates_exactly_one_admin_and_refuses_weak_passwords()
+    {
+        var hasher = new PasswordHasher<User>();
+        await using var db = database.System();
+
+        var weak = await PlatformBootstrap.CreateAdminAsync(db, hasher, "ops@kibo.test", "short", TimeProvider.System);
+        var first = await PlatformBootstrap.CreateAdminAsync(db, hasher, "Ops@Kibo.test", "a-long-bootstrap-passphrase", TimeProvider.System);
+        var second = await PlatformBootstrap.CreateAdminAsync(db, hasher, "other@kibo.test", "a-long-bootstrap-passphrase", TimeProvider.System);
+
+        Assert.StartsWith("Set ", weak);
+        Assert.StartsWith("Created", first);
+        Assert.StartsWith("A platform administrator already exists", second);
+        var admins = await db.Users.Where(u => u.IsPlatformAdmin).ToListAsync();
+        var admin = Assert.Single(admins);
+        Assert.Equal("ops@kibo.test", admin.Email);
+        Assert.Null(admin.TenantId);
+        Assert.NotEqual(PasswordVerificationResult.Failed, hasher.VerifyHashedPassword(admin, admin.PasswordHash, "a-long-bootstrap-passphrase"));
     }
 
     [Fact]

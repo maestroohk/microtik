@@ -1,0 +1,34 @@
+@using Kibo.Web.Features.Accounting
+
+@if (State != null)
+{
+    <span class="@($"badge {Css}")" title="@Hint">@Label</span>
+}
+
+@code {
+    [Parameter] public UsageState? State { get; set; }
+
+    private string Css => State switch
+    {
+        UsageState.Verified => "badge-ok",
+        UsageState.Live => "badge-info",
+        UsageState.Stale => "badge-warn",
+        _ => "badge-bad"
+    };
+
+    private string Label => State switch
+    {
+        UsageState.Verified => "Final",
+        UsageState.Live => "Live",
+        UsageState.Stale => "Delayed",
+        _ => "Router unreachable"
+    };
+
+    private string Hint => State switch
+    {
+        UsageState.Verified => "Every session has closed; this total is final.",
+        UsageState.Live => "A session is open and the router reported within the last few minutes.",
+        UsageState.Stale => "A session is open but the router has not reported recently; the real total may be higher.",
+        _ => "A session is open on a router Kibo cannot reach; usage since its last report is unknown."
+    };
+}

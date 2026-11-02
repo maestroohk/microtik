@@ -12,6 +12,7 @@
 @inject CurrentUser CurrentUser
 @inject NavigationManager Navigation
 @inject TimeProvider Clock
+@inject Kibo.Web.Features.Accounting.ReconciliationService Reconciliation
 
 @if (detail == null)
 {
@@ -84,7 +85,7 @@
                         }
                     </div>
                     <div>
-                        <div class="text-[12px] text-muted">Data used</div>
+                        <div class="flex items-center gap-2 text-[12px] text-muted">Data used <UsageBadge State="usageState" /></div>
                         <div class="num mt-1 font-semibold">@Format.Bytes(current.UsedBytes)@(current.DataQuotaBytes == null ? "" : $" of {Format.Bytes(current.DataQuotaBytes.Value)}")</div>
                         @if (current.DataQuotaBytes != null)
                         {
@@ -308,6 +309,7 @@
     }
 
     private DateTime Now => Clock.GetUtcNow().UtcDateTime;
+    private Kibo.Web.Features.Accounting.UsageState? usageState;
 
     protected override async Task OnInitializedAsync()
     {
@@ -321,7 +323,11 @@
         if (detail == null)
         {
             Navigation.NavigateTo("/customers");
+            return;
         }
+
+        var current = detail.Subscriptions.FirstOrDefault(s => s.Status is SubscriptionStatus.Active or SubscriptionStatus.Unused);
+        usageState = current == null ? null : await Reconciliation.UsageStateForSubscriptionAsync(current.Id);
     }
 
     private void Toggle(Guid id)

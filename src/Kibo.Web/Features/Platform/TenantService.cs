@@ -45,6 +45,9 @@ public record TenantSummary(Tenant Tenant, int Routers, int Customers, int Activ
 public partial class TenantService(KiboDb kiboDb, CurrentUser currentUser, AuditLogger audit,
     IPasswordHasher<User> hasher, TimeProvider clock, IConfiguration configuration)
 {
+    public bool PlatformAccessReady => currentUser.IsPlatformAdmin &&
+        (currentUser.UsedMfa || !configuration.GetValue("Kibo:Security:RequirePlatformAdminMfa", true));
+
     public async Task<List<TenantSummary>> ListAsync()
     {
         DemandPlatformAdmin();
@@ -204,7 +207,7 @@ public partial class TenantService(KiboDb kiboDb, CurrentUser currentUser, Audit
             throw new UnauthorizedAccessException("Platform administrator access is required.");
         }
 
-        if (configuration.GetValue("Kibo:Security:RequirePlatformAdminMfa", true) && !currentUser.UsedMfa)
+        if (!PlatformAccessReady)
         {
             throw new UnauthorizedAccessException("Turn on two-step sign-in under Sign-in security, then sign in again to manage operators.");
         }

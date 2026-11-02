@@ -42,6 +42,11 @@ services:
       PUID: "1000"
       PGID: "1000"
       TZ: Africa/Kampala
+      SERVERURL: ${KIBO_PUBLIC_HOST:?required}
+      SERVERPORT: "51820"
+      PEERS: ${KIBO_WG_PEERS:?required}
+      INTERNAL_SUBNET: ${KIBO_WG_INTERNAL_SUBNET:?required}
+      ALLOWEDIPS: ${KIBO_TUNNEL_SUBNET:?required}
     volumes:
       - ./wireguard:/config
     ports:
@@ -66,13 +71,11 @@ services:
       Kibo__Onboarding__PortalBaseUrl: https://${KIBO_PUBLIC_HOST}
       Kibo__Onboarding__RadiusServerAddress: ${KIBO_RADIUS_TUNNEL_ADDRESS:?required}
       Kibo__Onboarding__ApiAllowedFrom: ${KIBO_TUNNEL_SUBNET:?required}
-      Kibo__TrustedProxies__0: ${KIBO_PROXY_ADDRESS:-}
+      Kibo__TrustedProxies__0: 172.31.250.10
     volumes:
       - keys:/keys
     networks: [backend]
-    healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/healthz || exit 1"]
-      interval: 30s
+    stop_grace_period: 30s
 
   caddy:
     image: caddy:2.10-alpine
@@ -83,7 +86,12 @@ services:
     command: ["caddy", "reverse-proxy", "--from", "${KIBO_PUBLIC_HOST}", "--to", "web:8080"]
     volumes:
       - caddy:/data
-    networks: [backend]
+    depends_on:
+      web:
+        condition: service_healthy
+    networks:
+      backend:
+        ipv4_address: 172.31.250.10
 
 volumes:
   pgdata:
@@ -92,3 +100,6 @@ volumes:
 
 networks:
   backend:
+    ipam:
+      config:
+        - subnet: 172.31.250.0/24
