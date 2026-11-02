@@ -40,6 +40,10 @@ public class AppDbContext : DbContext
     public DbSet<RadiusNas> RadiusNas => Set<RadiusNas>();
     public DbSet<RadiusAccounting> RadiusAccounting => Set<RadiusAccounting>();
     public DbSet<RadiusPostAuth> RadiusPostAuth => Set<RadiusPostAuth>();
+    public DbSet<RadiusAccountingEvent> RadiusAccountingEvents => Set<RadiusAccountingEvent>();
+    public DbSet<EnforcementAction> EnforcementActions => Set<EnforcementAction>();
+    public DbSet<ProvisioningOperation> ProvisioningOperations => Set<ProvisioningOperation>();
+    public DbSet<RouterBackup> RouterBackups => Set<RouterBackup>();
 
     protected override void OnModelCreating(ModelBuilder model)
     {
@@ -68,10 +72,12 @@ public class AppDbContext : DbContext
         {
             e.HasIndex(r => new { r.TenantId, r.Name }).IsUnique();
             e.HasIndex(r => r.NasIpAddress).IsUnique();
+            e.HasIndex(r => r.HardwareId).IsUnique().HasFilter("hardware_id IS NOT NULL");
         });
 
         model.Entity<RouterHealthSample>(e => e.HasIndex(s => new { s.RouterId, s.TakenAt }));
         model.Entity<RouterEvent>(e => e.HasIndex(s => new { s.RouterId, s.OccurredAt }));
+        model.Entity<EnforcementAction>(e => e.HasIndex(a => new { a.TenantId, a.CreatedAt }));
 
         model.Entity<Customer>(e => e.HasIndex(c => new { c.TenantId, c.PhoneNumber }).IsUnique());
         model.Entity<CustomerDevice>(e => e.HasIndex(d => new { d.TenantId, d.MacAddress }));
@@ -159,9 +165,23 @@ public class AppDbContext : DbContext
             e.Property(a => a.AcctTerminateCause).HasColumnName("acctterminatecause");
             e.Property(a => a.FramedIpAddress).HasColumnName("framedipaddress");
             e.Property(a => a.Class).HasColumnName("class");
-            e.HasIndex(a => a.AcctUniqueId).IsUnique();
+            e.Property(a => a.TenantId).HasColumnName("tenant_id");
+            e.Property(a => a.RouterId).HasColumnName("router_id");
+            e.Property(a => a.SubscriptionId).HasColumnName("subscription_id");
+            e.Property(a => a.NasEventTime).HasColumnName("nas_event_time");
+            e.Property(a => a.UpdateCount).HasColumnName("update_count");
+            e.HasIndex(a => a.AcctUniqueId);
+            e.HasIndex(a => new { a.NasIpAddress, a.AcctSessionId, a.UserName });
+            e.HasIndex(a => new { a.SubscriptionId, a.AcctStopTime });
             e.HasIndex(a => new { a.UserName, a.AcctStopTime });
             e.HasIndex(a => new { a.NasIpAddress, a.AcctStopTime });
+        });
+
+        model.Entity<RadiusAccountingEvent>(e =>
+        {
+            e.ToTable("acct_events", "radius");
+            e.HasIndex(x => x.ReceivedAt);
+            e.HasIndex(x => new { x.NasIpAddress, x.SessionId });
         });
 
         model.Entity<RadiusPostAuth>(e =>
@@ -184,6 +204,9 @@ public class AppDbContext : DbContext
         model.Entity<Router>().HasQueryFilter(e => TenantScope == null || e.TenantId == TenantScope);
         model.Entity<RouterHealthSample>().HasQueryFilter(e => TenantScope == null || e.TenantId == TenantScope);
         model.Entity<RouterEvent>().HasQueryFilter(e => TenantScope == null || e.TenantId == TenantScope);
+        model.Entity<EnforcementAction>().HasQueryFilter(e => TenantScope == null || e.TenantId == TenantScope);
+        model.Entity<ProvisioningOperation>().HasQueryFilter(e => TenantScope == null || e.TenantId == TenantScope);
+        model.Entity<RouterBackup>().HasQueryFilter(e => TenantScope == null || e.TenantId == TenantScope);
         model.Entity<Customer>().HasQueryFilter(e => TenantScope == null || e.TenantId == TenantScope);
         model.Entity<CustomerDevice>().HasQueryFilter(e => TenantScope == null || e.TenantId == TenantScope);
         model.Entity<SupportNote>().HasQueryFilter(e => TenantScope == null || e.TenantId == TenantScope);

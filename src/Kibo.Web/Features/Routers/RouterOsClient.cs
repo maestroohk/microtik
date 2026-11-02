@@ -143,6 +143,27 @@ public partial class RouterOsClient(IHttpClientFactory httpClientFactory)
         return result is JsonObject obj ? Text(obj, "ret") : result?.ToString() ?? "";
     }
 
+    public Task<List<JsonObject>> ListAsync(RouterConnection connection, string path, CancellationToken ct = default) =>
+        GetArrayAsync(connection, path, ct);
+
+    public async Task<JsonObject> ReadAsync(RouterConnection connection, string path, CancellationToken ct = default) =>
+        await GetObjectAsync(connection, path, ct);
+
+    public async Task<string> CreateAsync(RouterConnection connection, string path, JsonObject item, CancellationToken ct = default)
+    {
+        var result = await SendAsync(connection, HttpMethod.Put, path, item, ct);
+        return result is JsonObject created ? Text(created, ".id") : "";
+    }
+
+    public async Task UpdateAsync(RouterConnection connection, string path, string id, JsonObject changes, CancellationToken ct = default) =>
+        await SendAsync(connection, HttpMethod.Patch, $"{path}/{Uri.EscapeDataString(id)}", changes, ct);
+
+    public async Task DeleteAsync(RouterConnection connection, string path, string id, CancellationToken ct = default) =>
+        await SendAsync(connection, HttpMethod.Delete, $"{path}/{Uri.EscapeDataString(id)}", null, ct);
+
+    public async Task<JsonNode?> CommandAsync(RouterConnection connection, string path, JsonObject body, CancellationToken ct = default) =>
+        await SendAsync(connection, HttpMethod.Post, path, body, ct);
+
     private async Task<JsonObject> GetObjectAsync(RouterConnection connection, string path, CancellationToken ct)
     {
         var node = await SendAsync(connection, HttpMethod.Get, path, null, ct);

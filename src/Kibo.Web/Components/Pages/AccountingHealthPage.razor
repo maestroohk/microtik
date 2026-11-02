@@ -1,0 +1,151 @@
+@page "/accounting"
+@attribute [Authorize]
+@using Kibo.Web.Features.Accounting
+@inject ReconciliationService Reconciliation
+@inject TimeProvider Clock
+
+<PageHeader Title="Accounting health" Subtitle="Compares raw RADIUS packets, stored sessions, subscription totals and what routers report. Nothing here changes usage history.">
+    <Actions>
+        <button class="btn" @onclick="() => LoadAsync(false)" disabled="@busy"><Icon Name="refresh" /> Refresh</button>
+        <button class="btn btn-primary" @onclick="() => LoadAsync(true)" disabled="@busy"><Icon Name="router" /> Compare with routers</button>
+    </Actions>
+</PageHeader>
+
+@if (health == null)
+{
+    <div class="skeleton h-[300px]"></div>
+    return;
+}
+
+<div class="grid grid-cols-2 gap-4 lg:grid-cols-4">
+    <StatCard Label="Last accounting packet" Value="@(health.LastPacketAt == null ? "Never" : Format.Ago(health.LastPacketAt, Now))">
+        <Detail>@health.EventsLastHour packets in the last hour</Detail>
+    </StatCard>
+    <StatCard Label="Open sessions" Value="@health.OpenSessions.ToString()">
+        <Detail>
+            @if (health.StaleSessions > 0)
+            {
+                <span class="text-warn">@health.StaleSessions without a recent update</span>
+            }
+            else
+            {
+                <span>All reporting on time</span>
+            }
+        </Detail>
+    </StatCard>
+    <StatCard Label="CoA success (24h)" Value="@(health.CoaSuccessRate == null ? "—" : $"{health.CoaSuccessRate:0}%")">
+        <Detail>@health.CoaAttempts attempt(s); failures fall back to disconnect</Detail>
+    </StatCard>
+    <StatCard Label="Discrepancies" Value="@health.Findings.Count.ToString()">
+        <Detail>
+            @{ var critical = health.Findings.Count(f => f.Severity == FindingSeverity.Critical); }
+            <span class="@(critical > 0 ? "text-bad" : "")">@critical critical</span>
+        </Detail>
+    </StatCard>
+</div>
+
+<section class="card mt-6 overflow-hidden">
+    <div class="card-header"><div class="card-title">Routers</div></div>
+    <div class="overflow-x-auto">
+        <table class="table">
+            <thead><tr><th>Router</th><th>Status</th><th>Last accounting</th><th class="right">Open in Kibo</th><th class="right">Active on router</th><th class="right">Stale</th></tr></thead>
+            <tbody>
+                @foreach (var r in health.Routers)
+                {
+                    <tr>
+                        <td class="font-medium">@r.RouterName</td>
+                        <td><RouterStatusBadge Status="r.Status" /></td>
+                        <td class="text-muted">@(r.LastPacketAt == null ? "No packets in 7 days" : Format.Ago(r.LastPacketAt, Now))</td>
+                        <td class="right num">@r.OpenSessions</td>
+                        <td class="right num">@(r.RouterSessions?.ToString() ?? "not checked")</td>
+                        <td class="right num @(r.StaleSessions > 0 ? "text-warn" : "")">@r.StaleSessions</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+</section>
+
+<section class="card mt-6 overflow-hidden">
+    <div class="card-header"><div class="card-title">Findings</div></div>
+    @if (health.Findings.Count == 0)
+    {
+        <EmptyState Icon="check" Title="No discrepancies" Text="Raw packets, sessions and subscriptions agree." />
+    }
+    else
+    {
+        <div class="overflow-x-auto">
+            <table class="table">
+                <thead><tr><th>Severity</th><th>Check</th><th>Subject</th><th>Detail</th><th></th></tr></thead>
+                <tbody>
+                    @foreach (var f in health.Findings)
+                    {
+                        <tr>
+                            <td><span class="badge @(f.Severity == FindingSeverity.Critical ? "badge-bad" : f.Severity == FindingSeverity.Warning ? "badge-warn" : "")">@f.Severity</span></td>
+                            <td class="text-muted">@f.Area</td>
+                            <td class="num">@f.Subject</td>
+                            <td class="max-w-[520px] text-[12.5px]">@f.Detail</td>
+                            <td class="right">
+                                @if (f.RadAcctId != null)
+                                {
+                                    <button class="btn btn-ghost btn-sm" @onclick="() => ShowEvidenceAsync(f.RadAcctId.Value)">Evidence</button>
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+</section>
+
+@if (evidence != null)
+{
+    <section class="card mt-6 overflow-hidden">
+        <div class="card-header">
+            <div>
+                <div class="card-title">Session @evidence.Session.AcctSessionId · @evidence.Session.UserName</div>
+                <div class="text-[12px] text-muted">Stored: ↑ @Format.Bytes(evidence.Session.AcctInputOctets ?? 0) ↓ @Format.Bytes(evidence.Session.AcctOutputOctets ?? 0) · @(evidence.Session.AcctStopTime == null ? "open" : $"closed ({evidence.Session.AcctTerminateCause})")</div>
+            </div>
+            <button class="btn btn-ghost btn-sm" @onclick="() => evidence = null"><Icon Name="x" /></button>
+        </div>
+        <div class="max-h-[360px] overflow-auto">
+            <table class="table">
+                <thead class="sticky top-0"><tr><th>Received</th><th>Type</th><th class="right">Session time</th><th class="right">Upload</th><th class="right">Download</th><th>Router clock</th><th>Outcome</th></tr></thead>
+                <tbody>
+                    @foreach (var e in evidence.Events)
+                    {
+                        <tr>
+                            <td class="num text-[12px]">@e.ReceivedAt.ToString("HH:mm:ss")</td>
+                            <td>@e.StatusType</td>
+                            <td class="right num">@e.SessionTime</td>
+                            <td class="right num">@e.InputBytes.ToString("N0")</td>
+                            <td class="right num">@e.OutputBytes.ToString("N0")</td>
+                            <td class="num text-[12px] text-muted">@(e.NasEventTime?.ToString("yyyy-MM-dd HH:mm:ss") ?? "—")</td>
+                            <td class="text-[12.5px]">@e.Outcome</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </section>
+}
+
+@code {
+    private AccountingHealth? health;
+    private SessionEvidence? evidence;
+    private bool busy;
+
+    private DateTime Now => Clock.GetUtcNow().UtcDateTime;
+
+    protected override async Task OnInitializedAsync() => await LoadAsync(false);
+
+    private async Task LoadAsync(bool queryRouters)
+    {
+        busy = true;
+        health = await Reconciliation.CheckAsync(queryRouters);
+        busy = false;
+    }
+
+    private async Task ShowEvidenceAsync(long id) => evidence = await Reconciliation.EvidenceAsync(id);
+}

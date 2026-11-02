@@ -67,6 +67,10 @@
                     <label class="label" for="password">Password</label>
                     <input id="password" name="password" type="password" class="input h-10" autocomplete="current-password" required />
                 </div>
+                <div>
+                    <label class="label" for="code">Authenticator code <span class="font-normal text-faint">(if you turned it on)</span></label>
+                    <input id="code" name="code" class="input h-10 num tracking-[0.3em]" inputmode="numeric" autocomplete="one-time-code" maxlength="7" autofocus="@(Error == "mfa")" />
+                </div>
                 <button type="submit" class="btn btn-primary h-10 w-full">Sign in</button>
             </form>
             <p class="mt-8 text-[12px] text-faint">Accounts lock for 15 minutes after 5 failed attempts.</p>
@@ -84,6 +88,7 @@
         "locked" => "Too many failed attempts. Try again in 15 minutes.",
         "suspended" => "This operator account is suspended. Contact the platform team.",
         "expired" => "The sign-in form expired. Please try again.",
+        "mfa" => "Enter the current 6-digit code from your authenticator app.",
         _ => null
     };
 }

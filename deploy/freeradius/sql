@@ -6,7 +6,7 @@ sql {
 		send_application_name = yes
 	}
 
-	server = "10.247.0.5"
+	server = $ENV{KIBO_RADIUS_DB_HOST}
 	port = 5432
 	login = "kibo_radius"
 	password = $ENV{KIBO_RADIUS_DB_PASSWORD}

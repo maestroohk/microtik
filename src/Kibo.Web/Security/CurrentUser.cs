@@ -12,6 +12,7 @@ public class CurrentUser
     public UserRole? Role { get; private set; }
     public bool IsPlatformAdmin { get; private set; }
     public bool IsAuthenticated => UserId != null;
+    public bool UsedMfa { get; private set; }
 
     public void Load(ClaimsPrincipal principal)
     {
@@ -24,6 +25,7 @@ public class CurrentUser
         Name = principal.FindFirstValue(ClaimTypes.Name) ?? "";
         Email = principal.FindFirstValue(ClaimTypes.Email) ?? "";
         IsPlatformAdmin = principal.HasClaim(KiboClaims.PlatformAdmin, "true");
+        UsedMfa = principal.HasClaim(KiboClaims.Mfa, "true");
 
         var tenant = principal.FindFirstValue(KiboClaims.TenantId);
         TenantId = string.IsNullOrEmpty(tenant) ? null : Guid.Parse(tenant);
@@ -49,4 +51,5 @@ public static class KiboClaims
 {
     public const string TenantId = "kibo:tenant";
     public const string PlatformAdmin = "kibo:platform-admin";
+    public const string Mfa = "kibo:mfa";
 }

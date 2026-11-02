@@ -28,6 +28,15 @@ public class RenewalService(KiboDb kiboDb, IEnumerable<IPaymentProvider> provide
         var requested = 0;
         foreach (var subscription in due)
         {
+            await using var transaction = await db.Database.BeginTransactionAsync(ct);
+            var locked = await db.Database
+                .SqlQuery<Guid>($"SELECT id AS \"Value\" FROM subscriptions WHERE id = {subscription.Id} FOR UPDATE SKIP LOCKED")
+                .ToListAsync(ct);
+            if (locked.Count == 0)
+            {
+                continue;
+            }
+
             var recent = await db.Payments.AnyAsync(p => p.AccessAccountId == subscription.AccessAccountId &&
                                                          p.PackageId == subscription.PackageId &&
                                                          p.CreatedAt > now - RetryEvery, ct);
@@ -86,6 +95,7 @@ public class RenewalService(KiboDb kiboDb, IEnumerable<IPaymentProvider> provide
             }
 
             await db.SaveChangesAsync(ct);
+            await transaction.CommitAsync(ct);
         }
 
         return requested;

@@ -62,14 +62,52 @@ Package terms are **copied onto the subscription at purchase**; editing a packag
 A purchase while another package is current is **queued** (`Scheduled`) and becomes current when the first one ends.
 
 ### Usage and accounting correctness
-* Accounting rows are written by FreeRADIUS directly (works when the app is down). Start/interim/stop are
-  upserts on `acctuniqueid` with `GREATEST(...)` so duplicate or out-of-order packets cannot reduce counters.
-* Octets are stored as 64-bit: `gigawords << 32 + octets`.
-* `Accounting-On/Off` closes all open sessions of that NAS (router reboot). Sessions without an update for
-  5 minutes are closed as `Stale-Session` and stop counting toward `Simultaneous-Use`.
-* Validity is wall-clock (`ExpiresAt`), so router reboots never reset it. Re-login receives the *remaining* time
-  and bytes, so reconnecting cannot bypass a cap. Overshoot is bounded by one interim interval per device; the
-  lifecycle worker disconnects all sessions once the quota is used.
+Every accounting packet goes through one PL/pgSQL function, `radius.account(...)`
+(`Data/Sql/radius_accounting.sql`, `SECURITY DEFINER`; the FreeRADIUS role only has EXECUTE). Rules:
+
+* **Identity is server-side.** Tenant and router come from the packet's source address (`radius.nas`). The
+  subscription comes from `Class` only if that subscription belongs to the same tenant and username; otherwise
+  from the account's current projection row. Usage is attributed by `subscription_id`, never by MAC, IP or time window.
+* **The router clock is never trusted.** Start, update and stop times are the server's receive time; the router's
+  `Event-Timestamp` is kept only as evidence (`nas_event_time`). A router with a wrong clock cannot hide usage.
+* **Counters are cumulative per session and only move up.** Each session row stores the highest
+  input/output totals seen (`gigawords << 32 + octets`); subscription usage is the sum of session maxima, recomputed
+  (never incremented), so duplicates, retransmissions and reordered packets cannot double-count or reduce usage.
+* **32-bit wrap without gigawords** is detected (drop of more than 2 GiB with session time still rising).
+* **Session-ID reuse** (router restarted without Accounting-On and reused an ID) is detected by session time going
+  backwards or a start for an old open session: the old row is closed `Session-Id-Reused`, a new row starts.
+* **Missing start**: the first interim/stop creates the session. **Missing stop**: no update for 5 minutes closes it
+  `Stale-Session`; if updates resume it is reopened. **Accounting-On/Off** closes all of that router's sessions.
+* Packets are serialized per (router, session, user) with an advisory lock, so parallel retransmissions are safe.
+* Every packet is stored in `radius.acct_events` with the decision taken (`outcome`), kept 90 days, for
+  reconciliation and dispute evidence.
+
+**Upload/download direction.** For hotspot and PPP, RouterOS reports `Acct-Input-*` as bytes received from the
+customer (upload) and `Acct-Output-*` as bytes sent to them (download). Both are stored; quotas use the sum.
+_Code-reviewed against RFC 2866; must be confirmed on CHR._
+
+### Quota enforcement guarantees
+* **Single session, hard cap:** exact up to RouterOS's own enforcement, because the router receives
+  `Mikrotik-Total-Limit(-Gigawords)` = remaining bytes and cuts the session itself.
+* **Re-login:** remaining = quota − used − *in-flight reserve*, where the reserve is
+  (seconds since each open session's last update) × (that session's speed limit). Delayed accounting therefore
+  cannot hand out the same bytes twice. If the reserve exhausts the allowance the login is refused (fail-closed).
+* **Concurrent sessions on one subscription (several devices or routers):** RouterOS cannot enforce one byte limit
+  across sessions or routers. Each new session gets `remaining / (open sessions + 1)`. Worst-case router-enforced
+  total is below `used + remaining × (1 + 1/2 + … )`; the lifecycle worker then disconnects every session once the
+  sum reaches the quota, within one accounting interval plus 15 s. Exact aggregate enforcement is **not** claimed.
+* **Login races:** recent `Access-Accept`s that have no accounting start yet count toward `Simultaneous-Use`
+  (`radius.simultaneous_sessions`), closing the window between authorization and the first accounting packet.
+  A sub-second race between two FreeRADIUS threads remains possible.
+* **Fair use** is a separate policy from hard caps, with two modes per package:
+  * `RateChange` (default): no byte limit is sent; when accounting shows the threshold crossed, Kibo sends CoA with
+    the reduced `Mikrotik-Rate-Limit`. Overshoot ≈ (accounting interval + up to 15 s) × speed. It is recorded per
+    subscription (`ThrottleOvershootBytes`) and shown on the dashboard. The interval is configurable per package
+    (15–90 s); shorter means more RADIUS/database load.
+  * `RouterCutoff`: the remaining bytes to the threshold are sent as `Mikrotik-Total-Limit`, so the router stops the
+    session exactly at the threshold; the next login gets the reduced speed. Exact, but the customer reconnects once.
+* **Brute force:** 10 rejects from one device (Calling-Station-Id) at one router within 10 minutes lock that device out
+  for the rest of the window, whatever username it tries.
 
 ### Payments
 * Provider-independent `IPaymentProvider`. Only the simulated provider exists today.
@@ -85,8 +123,21 @@ A purchase while another package is current is **queued** (`Scheduled`) and beco
 ### Router integration
 * Monitoring and session control use the **RouterOS v7 REST API** (`/rest`, HTTPS). Credentials are encrypted
   with ASP.NET Data Protection.
-* Kibo **never pushes configuration on its own**. It generates a reviewed onboarding script and `login.html`.
-  Automated provisioning will be opt-in per router (`ProvisioningEnabled`) and tested against CHR first.
+* **A router is not trusted because someone knows its address and password.** Registration issues a one-time
+  claim token; the onboarding script writes it into `/system note`. "Verify ownership" reads the note and the
+  RouterOS software ID over the API. Only then is the `radius.nas` row created (until then FreeRADIUS ignores the
+  router), and a software ID can belong to only one router across all tenants.
+* **Provisioning is plan → approve → backup → apply → verify → roll back.** Kibo only adds items commented
+  `kibo-managed` or sets the specific properties shown in the plan (RADIUS client, `radius incoming`, hotspot
+  profile RADIUS/accounting/login methods, portal walled-garden host, PPP AAA, the claim note). Firewall, NAT,
+  DHCP, routing, VLANs and users are never touched. A plan older than 15 minutes must be recreated. An `/export`
+  backup is stored encrypted before applying. After applying, the plan is recomputed; any remaining difference
+  rolls back every step in reverse. RouterOS has no transactions, so a rollback can itself fail; that state is
+  reported with the backup to restore from.
+* **Security audit (read-only)** flags: RADIUS not used, MAC or trial login, local hotspot users or PPP secrets
+  (bypass RADIUS), `bypassed` IP bindings, open walled gardens, extra RADIUS servers, CoA disabled, FastTrack,
+  global IPv6 on the hotspot interface (the hotspot only controls IPv4), clear-text or unrestricted management
+  services, and RouterOS older than 7.10.
 * Production routers connect over a per-router WireGuard tunnel; RADIUS, CoA and REST all use tunnel addresses.
   RouterOS listens for CoA on UDP 1700 unless configured; the port is stored per router.
 * Health checks back off exponentially (30 s → 15 min) so dead routers cost little. Router-down vs platform-down

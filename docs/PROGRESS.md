@@ -1,6 +1,6 @@
 # Kibo progress
 
-_Last updated: 2026-11-01_
+_Last updated: 2026-11-02_
 
 ## How to run it
 
@@ -23,7 +23,38 @@ simulator keys) — see `docs/ARCHITECTURE.md`. The simulator must be published 
 
 All ports bind to 127.0.0.1. The lab uses its own Docker network and does not touch host networking or routers.
 
-## Completed and tested
+## Hardening round (2026-11-02): status by evidence
+
+Categories: **RouterOS** = verified on RouterOS CHR · **Simulator** = verified with Kibo.Lab · **Integration** =
+automated test against PostgreSQL/RADIUS code · **Unit** = automated test without database · **Reviewed** =
+code-reviewed only · **Not tested**.
+
+| Item | Evidence | Notes |
+|---|---|---|
+| Accounting audit findings (router clock trusted, Class unused, stale sessions never reopened, session-ID reuse merge, no wrap detection, full grant per concurrent session, login race) | Reviewed | Fixed in `radius.account` / `radius.evaluate` |
+| `radius.account`: duplicates, reorder, gigawords, wrap, missing start, clock skew, ID reuse, stale reopen, Accounting-On, cross-tenant Class, parallel retransmissions, 10,000-update load test | **Not tested yet** | Tests written (`AccountingTests`); blocked by Docker Desktop (see below) |
+| Concurrent-session grant split, in-flight reserve, pending-login device count | **Not tested yet** | Tests written; same blocker |
+| RADIUS device lockout after 10 rejects | Reviewed | |
+| Fair-use modes (CoA vs router cut-off), overshoot recording | Reviewed | CoA path previously verified in simulator |
+| RADIUS codec: fuzzing found out-of-bounds read on a short packet with a long length field; fixed | Unit | 20,000 random/mutated packets |
+| TOTP MFA (RFC 6238 vectors, replay refusal), MFA required for platform admins outside Development | Unit (TOTP) / Reviewed (login flow) | |
+| Router login URL bound to the site's registered hotspot hosts | Unit | |
+| Router ownership proof, read-only security audit, plan/apply/verify/rollback provisioning | Reviewed | Needs CHR |
+| Accounting health page and reconciliation, operations panel, enforcement-action log | Reviewed (builds) | Needs running stack |
+| Renewal requests safe under duplicate workers (`FOR UPDATE SKIP LOCKED`) | Reviewed | |
+| CHR lab: official images 7.25 (stable) and 7.24.6 (long-term) downloaded; QEMU container, serial bootstrap, client namespaces written | **Not tested** | Same blocker |
+| Production compose and image build | **Not tested** | Same blocker |
+| NuGet dependencies | No known vulnerabilities (`dotnet list package --vulnerable`) | npm audit not yet run |
+
+**Current blocker:** Docker Desktop 4.86 fails at startup ("initializing Inference manager … dockerInference:
+The file cannot be accessed by the system"). The stale socket file has been deleted, but the running Docker
+Desktop instance is stuck on its error dialog and must be quit and started again from the system tray.
+
+Host: i7-13650HX, 39.6 GB RAM, Windows hypervisor active (WSL2), VirtualBox 7.0.12 with host-only network
+192.168.56.0/24, no Hyper-V management tools. CHR runs under QEMU inside a lab container so each router keeps its
+own lab address; no host networking changes are needed.
+
+## Completed and tested (first round)
 
 | Area | Status | How it was tested |
 |---|---|---|

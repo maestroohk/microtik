@@ -14,7 +14,7 @@ namespace Kibo.Web.Features.Portal;
 public record RouterContext(string? Mac, string? Ip, string? LoginUrl, string? Destination, string? ChapId,
     string? ChapChallenge, string? Error);
 
-public record PortalSite(Site Site, Tenant Tenant, List<Package> Packages);
+public record PortalSite(Site Site, Tenant Tenant, List<Package> Packages, List<string> TrustedLoginHosts);
 
 public record CustomerStatusView(string Username, string? PackageName, SubscriptionStatus? Status, DateTime? ExpiresAt,
     long? DataQuotaBytes, long UsedBytes, long? TimeQuotaSeconds, long UsedSeconds, int ScheduledCount);
@@ -41,7 +41,11 @@ public class PortalService(KiboDb kiboDb, IDataProtectionProvider protection, IW
                         p.ServiceType == ServiceType.Hotspot && (p.SiteId == null || p.SiteId == site.Id))
             .OrderBy(p => p.SortOrder).ThenBy(p => p.Price)
             .ToListAsync();
-        return new PortalSite(site, tenant, packages.Where(p => PackageCatalog.IsAvailable(p, now)).ToList());
+        var trustedHosts = await db.Routers.AsNoTracking()
+            .Where(r => r.SiteId == site.Id && r.HotspotLoginHost != "")
+            .Select(r => r.HotspotLoginHost.ToLower())
+            .ToListAsync();
+        return new PortalSite(site, tenant, packages.Where(p => PackageCatalog.IsAvailable(p, now)).ToList(), trustedHosts);
     }
 
     public RouterContext ReadContext(HttpContext http)
@@ -71,9 +75,10 @@ public class PortalService(KiboDb kiboDb, IDataProtectionProvider protection, IW
         return new RouterContext(null, null, null, null, null, null, null);
     }
 
-    public string? BuildRouterLoginUrl(RouterContext context, string username, string password)
+    public string? BuildRouterLoginUrl(RouterContext context, string username, string password,
+        IReadOnlyCollection<string> trustedHosts)
     {
-        if (!IsAllowedLoginUrl(context.LoginUrl))
+        if (!IsAllowedLoginUrl(context.LoginUrl, trustedHosts))
         {
             return null;
         }
@@ -100,11 +105,17 @@ public class PortalService(KiboDb kiboDb, IDataProtectionProvider protection, IW
         return url.ToString();
     }
 
-    public bool IsAllowedLoginUrl(string? loginUrl)
+    public bool IsAllowedLoginUrl(string? loginUrl, IReadOnlyCollection<string> trustedHosts)
     {
-        if (!Uri.TryCreate(loginUrl, UriKind.Absolute, out var uri) || uri.Scheme is not ("http" or "https"))
+        if (!Uri.TryCreate(loginUrl, UriKind.Absolute, out var uri) || uri.Scheme is not ("http" or "https") ||
+            !string.IsNullOrEmpty(uri.UserInfo))
         {
             return false;
+        }
+
+        if (trustedHosts.Count > 0)
+        {
+            return trustedHosts.Contains(uri.Host.ToLowerInvariant()) || (environment.IsDevelopment() && uri.IsLoopback);
         }
 
         if (environment.IsDevelopment() && uri.IsLoopback)

@@ -1,6 +1,7 @@
 using Kibo.Web.Components;
 using Kibo.Web.Data;
 using Kibo.Web.Data.Entities;
+using Kibo.Web.Features.Accounting;
 using Kibo.Web.Features.Auth;
 using Kibo.Web.Features.Customers;
 using Kibo.Web.Features.Vouchers;
@@ -122,6 +123,10 @@ builder.Services.AddScoped<AuditQuery>();
 builder.Services.AddScoped<PppoeService>();
 builder.Services.AddScoped<ReportService>();
 builder.Services.AddScoped<StaffService>();
+builder.Services.AddScoped<MfaService>();
+builder.Services.AddScoped<ReconciliationService>();
+builder.Services.AddScoped<RouterProvisioningService>();
+builder.Services.AddScoped<OperationsService>();
 builder.Services.AddScoped<RenewalService>();
 builder.Services.Configure<OnboardingOptions>(builder.Configuration.GetSection("Kibo:Onboarding"));
 

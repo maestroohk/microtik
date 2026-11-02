@@ -76,6 +76,8 @@ public class SessionService(
         foreach (var router in routers)
         {
             var result = await dynamicAuthorization.ChangeRateAsync(router, username, rateLimit, ct);
+            await RecordAsync(tenantId, router.Id, username, "throttle", "coa", result == DynamicAuthorizationResult.Acknowledged,
+                $"{rateLimit}: {result}");
             if (result == DynamicAuthorizationResult.Acknowledged)
             {
                 changed++;
@@ -95,9 +97,8 @@ public class SessionService(
         await using var db = kiboDb.ForSystem();
         return await (
                 from session in db.RadiusAccounting
-                join nas in db.RadiusNas on session.NasIpAddress equals nas.NasName
-                join router in db.Routers on nas.RouterId equals router.Id
-                where session.AcctStopTime == null && session.UserName == username && nas.TenantId == tenantId
+                join router in db.Routers on session.RouterId equals router.Id
+                where session.AcctStopTime == null && session.UserName == username && session.TenantId == tenantId
                 select router)
             .Distinct()
             .ToListAsync(ct);
@@ -113,24 +114,31 @@ public class SessionService(
             try
             {
                 var connection = healthChecker.ConnectionFor(router);
+                var count = 0;
                 var active = await routerClient.GetHotspotActiveAsync(connection, ct);
                 foreach (var session in active.Where(a => a.User == username))
                 {
                     await routerClient.RemoveHotspotActiveAsync(connection, session.Id, ct);
-                    removed++;
+                    count++;
                 }
 
                 var ppp = await routerClient.GetPppActiveAsync(connection, ct);
                 foreach (var session in ppp.Where(a => a.Name == username))
                 {
                     await routerClient.RemovePppActiveAsync(connection, session.Id, ct);
-                    removed++;
+                    count++;
                 }
+
+                removed += count;
+                await RecordAsync(tenantId, router.Id, username, "disconnect", "routeros-api", true, $"{count} session(s): {reason}");
             }
             catch (RouterOsException ex)
             {
                 var fallback = await dynamicAuthorization.DisconnectAsync(router, username, ct);
-                if (fallback == DynamicAuthorizationResult.Acknowledged)
+                var ok = fallback == DynamicAuthorizationResult.Acknowledged;
+                await RecordAsync(tenantId, router.Id, username, "disconnect", "radius-disconnect", ok,
+                    $"API failed ({ex.Kind}); RADIUS {fallback}: {reason}");
+                if (ok)
                 {
                     removed++;
                 }
@@ -148,5 +156,23 @@ public class SessionService(
         }
 
         return removed;
+    }
+
+    private async Task RecordAsync(Guid tenantId, Guid routerId, string username, string kind, string method, bool succeeded,
+        string detail)
+    {
+        await using var db = kiboDb.ForSystem();
+        db.EnforcementActions.Add(new EnforcementAction
+        {
+            TenantId = tenantId,
+            RouterId = routerId,
+            Username = username,
+            Kind = kind,
+            Method = method,
+            Succeeded = succeeded,
+            Detail = detail.Length > 500 ? detail[..500] : detail,
+            CreatedAt = DateTime.UtcNow
+        });
+        await db.SaveChangesAsync(CancellationToken.None);
     }
 }

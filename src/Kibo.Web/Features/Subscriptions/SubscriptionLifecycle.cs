@@ -21,6 +21,13 @@ public class SubscriptionLifecycle(KiboDb kiboDb, TimeProvider clock, ILogger<Su
                 .SetProperty(a => a.AcctTerminateCause, "Stale-Session"), ct);
     }
 
+    public async Task<int> PruneAccountingEvidenceAsync(TimeSpan retention, CancellationToken ct)
+    {
+        var cutoff = clock.GetUtcNow().UtcDateTime - retention;
+        await using var db = kiboDb.ForSystem();
+        return await db.RadiusAccountingEvents.Where(e => e.ReceivedAt < cutoff).ExecuteDeleteAsync(ct);
+    }
+
     public async Task RecordDevicesAsync(CancellationToken ct)
     {
         var since = clock.GetUtcNow().UtcDateTime.AddMinutes(-2);
@@ -91,13 +98,14 @@ public class SubscriptionLifecycle(KiboDb kiboDb, TimeProvider clock, ILogger<Su
 
         var now = clock.GetUtcNow().UtcDateTime;
         var account = subscription.AccessAccount;
-        var usage = await RadiusProvisioner.ReadUsageAsync(db, subscription.TenantId, account.Username,
+        var usage = await RadiusProvisioner.ReadUsageAsync(db, subscription.TenantId, account.Username, subscription.Id,
             subscription.CountingSince ?? subscription.PurchasedAt, ct);
 
         var previousStatus = subscription.Status;
         subscription.UsedBytes = usage.Bytes;
         subscription.UsedSeconds = usage.Seconds;
         subscription.UsageUpdatedAt = now;
+        subscription.UsageObservedAt = usage.ObservedAt;
 
         var decision = Entitlements.Evaluate(subscription, usage, now);
         var radiusChanged = false;
@@ -124,10 +132,15 @@ public class SubscriptionLifecycle(KiboDb kiboDb, TimeProvider clock, ILogger<Su
                  usage.Bytes >= subscription.DataQuotaBytes && Entitlements.HasThrottleFallback(subscription))
         {
             subscription.ThrottledAt = now;
-            var throttledRate = Entitlements.RateLimit(subscription.ThrottledUploadKbps ?? subscription.UploadKbps,
-                subscription.ThrottledDownloadKbps ?? subscription.DownloadKbps);
-            JobQueue.Enqueue(db, JobKinds.ThrottleUser,
-                new ThrottleUserPayload(subscription.TenantId, account.Username, throttledRate), now, subscription.TenantId);
+            subscription.ThrottleOvershootBytes = usage.Bytes - subscription.DataQuotaBytes.Value;
+            if (subscription.FairUseEnforcement == FairUseEnforcement.RateChange)
+            {
+                var throttledRate = Entitlements.RateLimit(subscription.ThrottledUploadKbps ?? subscription.UploadKbps,
+                    subscription.ThrottledDownloadKbps ?? subscription.DownloadKbps);
+                JobQueue.Enqueue(db, JobKinds.ThrottleUser,
+                    new ThrottleUserPayload(subscription.TenantId, account.Username, throttledRate), now, subscription.TenantId,
+                    deduplicationKey: $"throttle:{subscription.Id}");
+            }
         }
 
         if (subscription.Source == SubscriptionSource.Voucher && previousStatus != subscription.Status)
@@ -204,6 +217,10 @@ public class SubscriptionLifecycleWorker(IServiceScopeFactory scopeFactory, ILog
 
                 await lifecycle.ProcessBatchAsync(stoppingToken);
                 await lifecycle.RecordDevicesAsync(stoppingToken);
+                if (DateTime.UtcNow.Minute == 0)
+                {
+                    await lifecycle.PruneAccountingEvidenceAsync(TimeSpan.FromDays(90), stoppingToken);
+                }
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {

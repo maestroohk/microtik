@@ -1,0 +1,39 @@
+set timeout 300
+set address [lindex $argv 0]
+set gateway [lindex $argv 1]
+set admin $env(CHR_ADMIN_PASSWORD)
+set apiuser $env(CHR_API_USER)
+set apipass $env(CHR_API_PASSWORD)
+
+spawn telnet 127.0.0.1 5555
+send "\r"
+expect {
+    "Login:" { send "admin\r" }
+    timeout { exit 1 }
+}
+expect "Password:"
+send "\r"
+expect {
+    -re {software license.*\[Y/n\]} { send "n\r"; exp_continue }
+    -re {new password>} { send "$admin\r"; exp_continue }
+    -re {repeat new password>} { send "$admin\r"; exp_continue }
+    -re {\] >} {}
+    timeout { exit 2 }
+}
+sleep 1
+foreach command [list \
+    "/system identity set name=$env(CHR_NAME)" \
+    "/ip dhcp-client remove \[find\]" \
+    "/ip address add address=$address interface=ether1 comment=lab-wan" \
+    "/ip route add gateway=$gateway comment=lab-wan" \
+    "/ip dns set servers=$gateway" \
+    "/user group add name=kibo-api policy=read,write,api,rest-api,test,!ftp,!local,!telnet,!ssh,!reboot,!policy,!password,!sniff,!sensitive,!romon,!winbox,!web" \
+    "/user add name=$apiuser group=kibo-api password=$apipass" \
+    "/user add name=lab-provisioner group=full password=$admin" \
+    "/ip service set www disabled=no port=80" \
+    "/system ntp client set enabled=yes servers=$gateway" ] {
+    send "$command\r"
+    expect -re {\] >}
+}
+send "/quit\r"
+expect eof

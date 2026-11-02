@@ -19,7 +19,7 @@ public class PortalTests
         var context = new RouterContext("AA:BB:CC:DD:EE:FF", "10.5.50.2", "http://10.5.50.1/login", "http://example.com",
             "\\322", "\\370\\200\\225", null);
 
-        var url = portal.BuildRouterLoginUrl(context, "256772000111", "123456");
+        var url = portal.BuildRouterLoginUrl(context, "256772000111", "123456", []);
 
         var expected = Convert.ToHexStringLower(MD5.HashData([0xD2, .. Encoding.UTF8.GetBytes("123456"), 0xF8, 0x80, 0x95]));
         Assert.NotNull(url);
@@ -36,13 +36,25 @@ public class PortalTests
     [InlineData("javascript:alert(1)", false)]
     [InlineData(null, false)]
     public void Router_login_url_must_point_at_a_local_hotspot(string? url, bool allowed) =>
-        Assert.Equal(allowed, CreatePortal().IsAllowedLoginUrl(url));
+        Assert.Equal(allowed, CreatePortal().IsAllowedLoginUrl(url, []));
 
     [Fact]
     public void Loopback_login_url_is_only_allowed_in_development()
     {
-        Assert.False(CreatePortal("Production").IsAllowedLoginUrl("http://localhost:58721/login"));
-        Assert.True(CreatePortal("Development").IsAllowedLoginUrl("http://localhost:58721/login"));
+        Assert.False(CreatePortal("Production").IsAllowedLoginUrl("http://localhost:58721/login", []));
+        Assert.True(CreatePortal("Development").IsAllowedLoginUrl("http://localhost:58721/login", []));
+    }
+
+    [Fact]
+    public void Registered_hotspot_hosts_replace_the_private_range_rule()
+    {
+        var portal = CreatePortal();
+        string[] trusted = ["10.5.50.1", "wifi.kampala.lan"];
+
+        Assert.True(portal.IsAllowedLoginUrl("http://10.5.50.1/login", trusted));
+        Assert.True(portal.IsAllowedLoginUrl("http://WIFI.kampala.lan/login", trusted));
+        Assert.False(portal.IsAllowedLoginUrl("http://192.168.1.1/login", trusted));
+        Assert.False(portal.IsAllowedLoginUrl("http://user:pass@10.5.50.1/login", trusted));
     }
 
     [Theory]

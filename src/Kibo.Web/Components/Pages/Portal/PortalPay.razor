@@ -106,7 +106,7 @@
         account = await Portal.GetAccountAsync(payment.TenantId, payment.AccessAccountId.Value);
         if (account != null)
         {
-            loginUrl = Portal.BuildRouterLoginUrl(Portal.ReadContext(HttpAccessor.HttpContext!), account.Username, account.Password);
+            loginUrl = Portal.BuildRouterLoginUrl(Portal.ReadContext(HttpAccessor.HttpContext!), account.Username, account.Password, site!.TrustedLoginHosts);
         }
     }
 

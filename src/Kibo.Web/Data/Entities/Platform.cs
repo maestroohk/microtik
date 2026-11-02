@@ -61,6 +61,9 @@ public class User
     public bool IsActive { get; set; } = true;
     public int FailedLoginCount { get; set; }
     public DateTime? LockedUntil { get; set; }
+    public string? TotpSecretProtected { get; set; }
+    public long TotpLastStep { get; set; }
+    public DateTime? MfaEnabledAt { get; set; }
     public DateTime? LastLoginAt { get; set; }
     public DateTime CreatedAt { get; set; }
 }

@@ -32,7 +32,7 @@ public static class AuthEndpoints
     }
 
     private static async Task<IResult> LoginAsync(HttpContext http, KiboDb kiboDb, TimeProvider clock,
-        AuditLogger audit, IPasswordHasher<User> hasher, IAntiforgery antiforgery)
+        AuditLogger audit, IPasswordHasher<User> hasher, IAntiforgery antiforgery, SecretProtector secrets)
     {
         if (!await antiforgery.IsRequestValidAsync(http))
         {
@@ -73,6 +73,26 @@ public static class AuthEndpoints
             return Results.LocalRedirect("/login?error=invalid");
         }
 
+        if (user.TotpSecretProtected != null)
+        {
+            var step = Totp.Verify(secrets.Unprotect(user.TotpSecretProtected), form["code"], clock.GetUtcNow(), user.TotpLastStep);
+            if (step == null)
+            {
+                user.FailedLoginCount++;
+                if (user.FailedLoginCount >= MaxFailedAttempts)
+                {
+                    user.LockedUntil = now.Add(LockoutDuration);
+                    user.FailedLoginCount = 0;
+                }
+
+                await db.SaveChangesAsync();
+                await audit.WriteAsync("auth.mfa_failed", "User", user.Id.ToString(), tenantId: user.TenantId);
+                return Results.LocalRedirect("/login?error=mfa");
+            }
+
+            user.TotpLastStep = step.Value;
+        }
+
         if (user.Tenant is { Status: TenantStatus.Suspended } && !user.IsPlatformAdmin)
         {
             return Results.LocalRedirect("/login?error=suspended");
@@ -105,8 +125,15 @@ public static class AuthEndpoints
             claims.Add(new Claim(KiboClaims.PlatformAdmin, "true"));
         }
 
+        if (user.TotpSecretProtected != null)
+        {
+            claims.Add(new Claim(KiboClaims.Mfa, "true"));
+        }
+
         var identity = new ClaimsIdentity(claims, CookieAuthenticationDefaults.AuthenticationScheme);
         await http.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme, new ClaimsPrincipal(identity));
+        await audit.WriteAsync("auth.login", "User", user.Id.ToString(), user.TotpSecretProtected != null ? "with MFA" : "password only",
+            user.TenantId);
 
         var destination = Uri.IsWellFormedUriString(returnUrl, UriKind.Relative) && returnUrl.StartsWith('/')
             && !returnUrl.StartsWith("//")

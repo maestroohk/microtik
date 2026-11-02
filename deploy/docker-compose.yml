@@ -32,6 +32,7 @@ services:
         condition: service_healthy
     environment:
       KIBO_RADIUS_DB_PASSWORD: ${KIBO_RADIUS_DB_PASSWORD:?set KIBO_RADIUS_DB_PASSWORD in deploy/.env}
+      KIBO_RADIUS_DB_HOST: 10.247.0.5
       KIBO_RADIUS_CLIENT_NETWORK: 10.247.0.0/24
       KIBO_RADIUS_DEBUG: ${KIBO_RADIUS_DEBUG:-}
     volumes:
@@ -103,8 +104,62 @@ services:
       kibo-lab-wan:
         ipv4_address: 10.247.0.22
 
+  chr-1:
+    profiles: ["chr"]
+    build:
+      context: ../lab/chr
+    cap_add: [NET_ADMIN]
+    devices:
+      - /dev/net/tun
+    cpus: 1.0
+    mem_limit: 512m
+    environment:
+      CHR_VERSION: "7.25"
+      CHR_NAME: lab-chr-1
+      CHR_MAC: "52:54:00:4b:00:31"
+      CHR_ADMIN_PASSWORD: ${KIBO_CHR_ADMIN_PASSWORD:?set KIBO_CHR_ADMIN_PASSWORD in deploy/.env}
+      CHR_API_USER: kibo-api
+      CHR_API_PASSWORD: ${KIBO_CHR_API_PASSWORD:?set KIBO_CHR_API_PASSWORD in deploy/.env}
+    volumes:
+      - ../lab/chr/images:/images:ro
+      - chr-1-data:/data
+    ports:
+      - "127.0.0.1:58731:80"
+      - "127.0.0.1:53731:3799/udp"
+    networks:
+      kibo-lab-wan:
+        ipv4_address: 10.247.0.31
+
+  chr-2:
+    profiles: ["chr"]
+    build:
+      context: ../lab/chr
+    cap_add: [NET_ADMIN]
+    devices:
+      - /dev/net/tun
+    cpus: 1.0
+    mem_limit: 512m
+    environment:
+      CHR_VERSION: "7.24.6"
+      CHR_NAME: lab-chr-2
+      CHR_MAC: "52:54:00:4b:00:32"
+      CHR_ADMIN_PASSWORD: ${KIBO_CHR_ADMIN_PASSWORD:?set KIBO_CHR_ADMIN_PASSWORD in deploy/.env}
+      CHR_API_USER: kibo-api
+      CHR_API_PASSWORD: ${KIBO_CHR_API_PASSWORD:?set KIBO_CHR_API_PASSWORD in deploy/.env}
+    volumes:
+      - ../lab/chr/images:/images:ro
+      - chr-2-data:/data
+    ports:
+      - "127.0.0.1:58732:80"
+      - "127.0.0.1:53732:3799/udp"
+    networks:
+      kibo-lab-wan:
+        ipv4_address: 10.247.0.32
+
 volumes:
   kibo-pgdata:
+  chr-1-data:
+  chr-2-data:
 
 networks:
   kibo-lab-wan:

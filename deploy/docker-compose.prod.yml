@@ -27,6 +27,7 @@ services:
         condition: service_healthy
     environment:
       KIBO_RADIUS_DB_PASSWORD: ${KIBO_RADIUS_DB_PASSWORD:?required}
+      KIBO_RADIUS_DB_HOST: postgres
       KIBO_RADIUS_CLIENT_NETWORK: ${KIBO_TUNNEL_SUBNET:?required}
     volumes:
       - ./freeradius:/kibo:ro

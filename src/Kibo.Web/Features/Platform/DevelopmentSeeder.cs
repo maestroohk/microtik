@@ -113,7 +113,8 @@ public class DevelopmentSeeder(KiboDb kiboDb, IConfiguration configuration, IPas
             TenantId = tenantId, SiteId = siteId, Name = name, ApiKind = RouterApiKind.Simulator,
             ManagementHost = "127.0.0.1", ManagementPort = apiPort, UseTls = false, ApiUsername = "kibo-api",
             ApiPasswordProtected = secrets.Protect(apiPassword), NasIpAddress = nasIp, RadiusSecret = radiusSecret,
-            CoaPort = coaPort, HotspotInterface = "bridge-hotspot", UplinkInterface = "ether1", CreatedAt = now
+            CoaPort = coaPort, HotspotInterface = "bridge-hotspot", UplinkInterface = "ether1", CreatedAt = now,
+            ClaimToken = "lab-simulator", OwnershipVerifiedAt = now
         };
         db.Routers.Add(router);
         db.RadiusNas.Add(new RadiusNas

@@ -97,6 +97,11 @@
     </StatCard>
 </div>
 
+@if (CurrentUser.Can(Permissions.ViewRouters))
+{
+    <OperationsPanel />
+}
+
 @if (finance)
 {
 <div class="mt-6 grid gap-6 xl:grid-cols-[1.6fr_1fr]">

@@ -1,0 +1,89 @@
+@page "/account/security"
+@attribute [Authorize]
+@using Kibo.Web.Features.Auth
+@using QRCoder
+@inject MfaService Mfa
+@inject CurrentUser CurrentUser
+
+<PageHeader Title="Sign-in security" Subtitle="Two-step sign-in asks for a code from an authenticator app after your password." />
+
+@if (message != null)
+{
+    <div class="mb-5"><Notice Kind="@(messageOk ? "ok" : "bad")" Text="@message" /></div>
+}
+
+<section class="card max-w-xl p-6">
+    @if (enabled)
+    {
+        <div class="flex items-center gap-2"><span class="badge badge-ok badge-dot">On</span><span class="font-medium">Two-step sign-in is on</span></div>
+        <p class="mt-2 text-[13px] text-muted">To turn it off, enter a current code.</p>
+        <div class="mt-4 flex gap-2">
+            <input class="input w-40 num tracking-[0.3em]" inputmode="numeric" maxlength="7" @bind="code" aria-label="Current code" />
+            <button class="btn btn-danger" @onclick="DisableAsync">Turn off</button>
+        </div>
+    }
+    else if (secret == null)
+    {
+        <div class="font-medium">Two-step sign-in is off</div>
+        <p class="mt-2 text-[13px] text-muted">@Recommendation</p>
+        <button class="btn btn-primary mt-4" @onclick="Start">Set up</button>
+    }
+    else
+    {
+        <div class="font-medium">Scan this code with your authenticator app</div>
+        <div class="mt-4 flex flex-wrap items-start gap-6">
+            <div class="rounded-lg bg-white p-2">@((MarkupString)qr!)</div>
+            <div class="min-w-0 flex-1 text-[13px]">
+                <p class="text-muted">Or enter this key by hand:</p>
+                <p class="num mt-1 break-all font-semibold">@secret</p>
+                <label class="label mt-4" for="mfacode">Code from the app</label>
+                <div class="flex gap-2">
+                    <input id="mfacode" class="input w-40 num tracking-[0.3em]" inputmode="numeric" maxlength="7" @bind="code" />
+                    <button class="btn btn-primary" @onclick="EnableAsync">Turn on</button>
+                </div>
+            </div>
+        </div>
+    }
+</section>
+
+@code {
+    private bool enabled;
+    private string? secret;
+    private string? qr;
+    private string code = "";
+    private string? message;
+    private bool messageOk;
+
+    private string Recommendation => CurrentUser.IsPlatformAdmin
+        ? "Platform administrators must turn this on before managing operators in production."
+        : "Recommended for owners and finance staff.";
+
+    protected override async Task OnInitializedAsync() => enabled = await Mfa.IsEnabledAsync();
+
+    private void Start()
+    {
+        secret = Totp.NewSecret();
+        using var generator = new QRCodeGenerator();
+        using var data = generator.CreateQrCode(Totp.ProvisioningUri(CurrentUser.Email, secret), QRCodeGenerator.ECCLevel.M);
+        qr = new SvgQRCode(data).GetGraphic(4, "#111111", "#ffffff", drawQuietZones: true);
+    }
+
+    private async Task EnableAsync()
+    {
+        var result = await Mfa.EnableAsync(secret!, code);
+        messageOk = result.Succeeded;
+        message = result.Succeeded ? "Two-step sign-in is on. Sign out and back in to use it for this session." : result.Error;
+        enabled = result.Succeeded;
+        code = "";
+    }
+
+    private async Task DisableAsync()
+    {
+        var result = await Mfa.DisableAsync(code);
+        messageOk = result.Succeeded;
+        message = result.Succeeded ? "Two-step sign-in is off." : result.Error;
+        enabled = !result.Succeeded;
+        secret = null;
+        code = "";
+    }
+}

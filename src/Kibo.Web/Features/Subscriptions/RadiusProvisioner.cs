@@ -49,22 +49,28 @@ public static class RadiusProvisioner
     }
 
     public static async Task<UsageTotals> ReadUsageAsync(AppDbContext db, Guid tenantId, string username,
-        DateTime countingSince, CancellationToken ct = default)
+        Guid subscriptionId, DateTime countingSince, CancellationToken ct = default)
     {
-        var nasAddresses = db.RadiusNas.IgnoreQueryFilters().Where(n => n.TenantId == tenantId).Select(n => n.NasName);
-        var sessions = db.RadiusAccounting
-            .Where(a => a.UserName == username && a.AcctStartTime >= countingSince && nasAddresses.Contains(a.NasIpAddress!));
+        var sessions = db.RadiusAccounting.Where(a => a.TenantId == tenantId &&
+            (a.SubscriptionId == subscriptionId ||
+             (a.SubscriptionId == null && a.UserName == username && a.AcctStartTime >= countingSince)));
 
         var totals = await sessions
             .GroupBy(_ => 1)
             .Select(g => new
             {
-                Bytes = g.Sum(a => (a.AcctInputOctets ?? 0) + (a.AcctOutputOctets ?? 0)),
+                Upload = g.Sum(a => a.AcctInputOctets ?? 0),
+                Download = g.Sum(a => a.AcctOutputOctets ?? 0),
                 Seconds = g.Sum(a => a.AcctSessionTime ?? 0),
-                First = g.Min(a => a.AcctStartTime)
+                First = g.Min(a => a.AcctStartTime),
+                Observed = g.Max(a => a.AcctUpdateTime ?? a.AcctStartTime),
+                Open = g.Count(a => a.AcctStopTime == null)
             })
             .FirstOrDefaultAsync(ct);
 
-        return totals == null ? new UsageTotals(0, 0, null) : new UsageTotals(totals.Bytes, totals.Seconds, totals.First);
+        return totals == null
+            ? new UsageTotals(0, 0, null)
+            : new UsageTotals(totals.Upload + totals.Download, totals.Seconds, totals.First, totals.Observed, totals.Open,
+                totals.Upload, totals.Download);
     }
 }

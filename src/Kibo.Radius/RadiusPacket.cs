@@ -132,6 +132,11 @@ public class RadiusPacket
         }
 
         var length = BinaryPrimitives.ReadUInt16BigEndian(data.AsSpan(2));
+        if (length < 20 || length > data.Length || length > 4096)
+        {
+            throw new FormatException("RADIUS length field does not match the received packet.");
+        }
+
         var packet = new RadiusPacket
         {
             Code = data[0],

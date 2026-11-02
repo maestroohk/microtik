@@ -103,6 +103,11 @@
                     <label class="label" for="hs">Hotspot interface</label>
                     <InputText id="hs" class="input num" @bind-Value="form.HotspotInterface" placeholder="bridge-hotspot" />
                 </div>
+                <div class="sm:col-span-2">
+                    <label class="label" for="hlh">Hotspot login address</label>
+                    <InputText id="hlh" class="input num" @bind-Value="form.HotspotLoginHost" placeholder="10.5.50.1 or wifi.example.lan" />
+                    <p class="hint">The hotspot's own address or DNS name. The portal only sends customers' login details to this host.</p>
+                </div>
                 <div>
                     <label class="label" for="up">Uplink interface (for traffic graphs)</label>
                     <InputText id="up" class="input num" @bind-Value="form.UplinkInterface" placeholder="ether1" />
@@ -160,7 +165,7 @@
                 ManagementPort = router.ManagementPort, UseTls = router.UseTls,
                 AllowSelfSignedCertificate = router.AllowSelfSignedCertificate, ApiUsername = router.ApiUsername,
                 NasIpAddress = router.NasIpAddress, CoaPort = router.CoaPort, HotspotInterface = router.HotspotInterface,
-                UplinkInterface = router.UplinkInterface
+                UplinkInterface = router.UplinkInterface, HotspotLoginHost = router.HotspotLoginHost
             };
         }
         else if (sites.Count == 1)

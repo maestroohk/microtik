@@ -354,6 +354,60 @@ namespace Kibo.Web.Data.Migrations
                     b.ToTable("customer_devices", (string)null);
                 });
 
+            modelBuilder.Entity("Kibo.Web.Data.Entities.EnforcementAction", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("id");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("Detail")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("detail");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("kind");
+
+                    b.Property<string>("Method")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("method");
+
+                    b.Property<Guid?>("RouterId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("router_id");
+
+                    b.Property<bool>("Succeeded")
+                        .HasColumnType("boolean")
+                        .HasColumnName("succeeded");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<string>("Username")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("username");
+
+                    b.HasKey("Id")
+                        .HasName("pk_enforcement_actions");
+
+                    b.HasIndex("TenantId", "CreatedAt")
+                        .HasDatabaseName("ix_enforcement_actions_tenant_id_created_at");
+
+                    b.ToTable("enforcement_actions", (string)null);
+                });
+
             modelBuilder.Entity("Kibo.Web.Data.Entities.LedgerEntry", b =>
                 {
                     b.Property<long>("Id")
@@ -444,6 +498,10 @@ namespace Kibo.Web.Data.Migrations
                         .HasColumnType("time without time zone")
                         .HasColumnName("access_window_start");
 
+                    b.Property<int>("AccountingIntervalSeconds")
+                        .HasColumnType("integer")
+                        .HasColumnName("accounting_interval_seconds");
+
                     b.Property<int>("ActivationDeadlineDays")
                         .HasColumnType("integer")
                         .HasColumnName("activation_deadline_days");
@@ -477,6 +535,10 @@ namespace Kibo.Web.Data.Migrations
                     b.Property<int>("DownloadKbps")
                         .HasColumnType("integer")
                         .HasColumnName("download_kbps");
+
+                    b.Property<int>("FairUseEnforcement")
+                        .HasColumnType("integer")
+                        .HasColumnName("fair_use_enforcement");
 
                     b.Property<int>("GraceMinutes")
                         .HasColumnType("integer")
@@ -745,6 +807,56 @@ namespace Kibo.Web.Data.Migrations
                     b.ToTable("payment_callbacks", (string)null);
                 });
 
+            modelBuilder.Entity("Kibo.Web.Data.Entities.ProvisioningOperation", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("id");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<DateTime?>("CompletedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("completed_at");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("Detail")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("detail");
+
+                    b.Property<string>("PlanJson")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("plan_json");
+
+                    b.Property<string>("RequestedBy")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("requested_by");
+
+                    b.Property<Guid>("RouterId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("router_id");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("integer")
+                        .HasColumnName("status");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_provisioning_operations");
+
+                    b.ToTable("provisioning_operations", (string)null);
+                });
+
             modelBuilder.Entity("Kibo.Web.Data.Entities.RadiusAccess", b =>
                 {
                     b.Property<Guid>("TenantId")
@@ -758,6 +870,10 @@ namespace Kibo.Web.Data.Migrations
                     b.Property<Guid>("AccessAccountId")
                         .HasColumnType("uuid")
                         .HasColumnName("access_account_id");
+
+                    b.Property<int>("AccountingIntervalSeconds")
+                        .HasColumnType("integer")
+                        .HasColumnName("accounting_interval_seconds");
 
                     b.Property<DateTime?>("ActivateBy")
                         .HasColumnType("timestamp with time zone")
@@ -778,6 +894,10 @@ namespace Kibo.Web.Data.Migrations
                     b.Property<DateTime?>("ExpiresAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("expires_at");
+
+                    b.Property<bool>("FairUseRouterCutoff")
+                        .HasColumnType("boolean")
+                        .HasColumnName("fair_use_router_cutoff");
 
                     b.Property<string>("FramedIpAddress")
                         .HasColumnType("text")
@@ -912,6 +1032,10 @@ namespace Kibo.Web.Data.Migrations
                         .HasColumnType("text")
                         .HasColumnName("framedipaddress");
 
+                    b.Property<DateTime?>("NasEventTime")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("nas_event_time");
+
                     b.Property<string>("NasIpAddress")
                         .HasColumnType("text")
                         .HasColumnName("nasipaddress");
@@ -919,6 +1043,22 @@ namespace Kibo.Web.Data.Migrations
                     b.Property<string>("NasPortId")
                         .HasColumnType("text")
                         .HasColumnName("nasportid");
+
+                    b.Property<Guid?>("RouterId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("router_id");
+
+                    b.Property<Guid?>("SubscriptionId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("subscription_id");
+
+                    b.Property<Guid?>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<int>("UpdateCount")
+                        .HasColumnType("integer")
+                        .HasColumnName("update_count");
 
                     b.Property<string>("UserName")
                         .HasColumnType("text")
@@ -928,16 +1068,97 @@ namespace Kibo.Web.Data.Migrations
                         .HasName("pk_radacct");
 
                     b.HasIndex("AcctUniqueId")
-                        .IsUnique()
                         .HasDatabaseName("ix_radacct_acctuniqueid");
 
                     b.HasIndex("NasIpAddress", "AcctStopTime")
                         .HasDatabaseName("ix_radacct_nasipaddress_acctstoptime");
 
+                    b.HasIndex("SubscriptionId", "AcctStopTime")
+                        .HasDatabaseName("ix_radacct_subscription_id_acctstoptime");
+
                     b.HasIndex("UserName", "AcctStopTime")
                         .HasDatabaseName("ix_radacct_username_acctstoptime");
 
+                    b.HasIndex("NasIpAddress", "AcctSessionId", "UserName")
+                        .HasDatabaseName("ix_radacct_nasipaddress_acctsessionid_username");
+
                     b.ToTable("radacct", "radius");
+                });
+
+            modelBuilder.Entity("Kibo.Web.Data.Entities.RadiusAccountingEvent", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("id");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<string>("Class")
+                        .HasColumnType("text")
+                        .HasColumnName("class");
+
+                    b.Property<long>("InputBytes")
+                        .HasColumnType("bigint")
+                        .HasColumnName("input_bytes");
+
+                    b.Property<DateTime?>("NasEventTime")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("nas_event_time");
+
+                    b.Property<string>("NasIpAddress")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("nas_ip_address");
+
+                    b.Property<string>("Outcome")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("outcome");
+
+                    b.Property<long>("OutputBytes")
+                        .HasColumnType("bigint")
+                        .HasColumnName("output_bytes");
+
+                    b.Property<long?>("RadAcctId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("rad_acct_id");
+
+                    b.Property<DateTime>("ReceivedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("received_at");
+
+                    b.Property<string>("SessionId")
+                        .HasColumnType("text")
+                        .HasColumnName("session_id");
+
+                    b.Property<long>("SessionTime")
+                        .HasColumnType("bigint")
+                        .HasColumnName("session_time");
+
+                    b.Property<string>("StatusType")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("status_type");
+
+                    b.Property<Guid?>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<string>("UserName")
+                        .HasColumnType("text")
+                        .HasColumnName("user_name");
+
+                    b.HasKey("Id")
+                        .HasName("pk_acct_events");
+
+                    b.HasIndex("ReceivedAt")
+                        .HasDatabaseName("ix_acct_events_received_at");
+
+                    b.HasIndex("NasIpAddress", "SessionId")
+                        .HasDatabaseName("ix_acct_events_nas_ip_address_session_id");
+
+                    b.ToTable("acct_events", "radius");
                 });
 
             modelBuilder.Entity("Kibo.Web.Data.Entities.RadiusNas", b =>
@@ -1063,6 +1284,11 @@ namespace Kibo.Web.Data.Migrations
                         .HasColumnType("text")
                         .HasColumnName("board_name");
 
+                    b.Property<string>("ClaimToken")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("claim_token");
+
                     b.Property<int>("CoaPort")
                         .HasColumnType("integer")
                         .HasColumnName("coa_port");
@@ -1075,10 +1301,23 @@ namespace Kibo.Web.Data.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("created_at");
 
+                    b.Property<DateTime?>("DriftDetectedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("drift_detected_at");
+
+                    b.Property<string>("HardwareId")
+                        .HasColumnType("text")
+                        .HasColumnName("hardware_id");
+
                     b.Property<string>("HotspotInterface")
                         .IsRequired()
                         .HasColumnType("text")
                         .HasColumnName("hotspot_interface");
+
+                    b.Property<string>("HotspotLoginHost")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("hotspot_login_host");
 
                     b.Property<bool?>("HotspotPresent")
                         .HasColumnType("boolean")
@@ -1122,6 +1361,18 @@ namespace Kibo.Web.Data.Migrations
                     b.Property<DateTime?>("NextCheckAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("next_check_at");
+
+                    b.Property<DateTime?>("OwnershipVerifiedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("ownership_verified_at");
+
+                    b.Property<DateTime?>("PostureCheckedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("posture_checked_at");
+
+                    b.Property<string>("PostureJson")
+                        .HasColumnType("text")
+                        .HasColumnName("posture_json");
 
                     b.Property<bool>("ProvisioningEnabled")
                         .HasColumnType("boolean")
@@ -1172,6 +1423,11 @@ namespace Kibo.Web.Data.Migrations
                     b.HasKey("Id")
                         .HasName("pk_routers");
 
+                    b.HasIndex("HardwareId")
+                        .IsUnique()
+                        .HasDatabaseName("ix_routers_hardware_id")
+                        .HasFilter("hardware_id IS NOT NULL");
+
                     b.HasIndex("NasIpAddress")
                         .IsUnique()
                         .HasDatabaseName("ix_routers_nas_ip_address");
@@ -1184,6 +1440,47 @@ namespace Kibo.Web.Data.Migrations
                         .HasDatabaseName("ix_routers_tenant_id_name");
 
                     b.ToTable("routers", (string)null);
+                });
+
+            modelBuilder.Entity("Kibo.Web.Data.Entities.RouterBackup", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("id");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<int>("ExportLength")
+                        .HasColumnType("integer")
+                        .HasColumnName("export_length");
+
+                    b.Property<string>("ExportProtected")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("export_protected");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("reason");
+
+                    b.Property<Guid>("RouterId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("router_id");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_router_backups");
+
+                    b.ToTable("router_backups", (string)null);
                 });
 
             modelBuilder.Entity("Kibo.Web.Data.Entities.RouterEvent", b =>
@@ -1367,6 +1664,10 @@ namespace Kibo.Web.Data.Migrations
                         .HasColumnType("time without time zone")
                         .HasColumnName("access_window_start");
 
+                    b.Property<int>("AccountingIntervalSeconds")
+                        .HasColumnType("integer")
+                        .HasColumnName("accounting_interval_seconds");
+
                     b.Property<DateTime>("ActivateBy")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("activate_by");
@@ -1403,6 +1704,10 @@ namespace Kibo.Web.Data.Migrations
                     b.Property<DateTime?>("ExpiresAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("expires_at");
+
+                    b.Property<int>("FairUseEnforcement")
+                        .HasColumnType("integer")
+                        .HasColumnName("fair_use_enforcement");
 
                     b.Property<int>("GraceSeconds")
                         .HasColumnType("integer")
@@ -1454,6 +1759,10 @@ namespace Kibo.Web.Data.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("tenant_id");
 
+                    b.Property<long?>("ThrottleOvershootBytes")
+                        .HasColumnType("bigint")
+                        .HasColumnName("throttle_overshoot_bytes");
+
                     b.Property<DateTime?>("ThrottledAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("throttled_at");
@@ -1473,6 +1782,10 @@ namespace Kibo.Web.Data.Migrations
                     b.Property<int>("UploadKbps")
                         .HasColumnType("integer")
                         .HasColumnName("upload_kbps");
+
+                    b.Property<DateTime?>("UsageObservedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("usage_observed_at");
 
                     b.Property<DateTime?>("UsageUpdatedAt")
                         .HasColumnType("timestamp with time zone")
@@ -1680,6 +1993,10 @@ namespace Kibo.Web.Data.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("locked_until");
 
+                    b.Property<DateTime?>("MfaEnabledAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("mfa_enabled_at");
+
                     b.Property<string>("PasswordHash")
                         .IsRequired()
                         .HasColumnType("text")
@@ -1692,6 +2009,14 @@ namespace Kibo.Web.Data.Migrations
                     b.Property<Guid?>("TenantId")
                         .HasColumnType("uuid")
                         .HasColumnName("tenant_id");
+
+                    b.Property<long>("TotpLastStep")
+                        .HasColumnType("bigint")
+                        .HasColumnName("totp_last_step");
+
+                    b.Property<string>("TotpSecretProtected")
+                        .HasColumnType("text")
+                        .HasColumnName("totp_secret_protected");
 
                     b.HasKey("Id")
                         .HasName("pk_users");

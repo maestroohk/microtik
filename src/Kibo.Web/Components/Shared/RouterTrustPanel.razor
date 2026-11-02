@@ -1,0 +1,193 @@
+@using System.Text.Json
+@using Kibo.Web.Features.Routers
+@inject RouterProvisioningService Provisioning
+@inject CurrentUser CurrentUser
+@inject TimeProvider Clock
+
+<section class="card">
+    <div class="card-header">
+        <div class="card-title">Ownership</div>
+        @if (Router.OwnershipVerifiedAt != null)
+        {
+            <span class="badge badge-ok badge-dot">Verified</span>
+        }
+        else
+        {
+            <span class="badge badge-warn badge-dot">Not verified</span>
+        }
+    </div>
+    <div class="space-y-3 p-5 text-[13px]">
+        @if (Router.OwnershipVerifiedAt != null)
+        {
+            <p class="text-muted">Proven @Format.Local(Router.OwnershipVerifiedAt)@(Router.HardwareId == null ? "" : $" · {Router.HardwareId}"). RADIUS is enabled for this router.</p>
+        }
+        else
+        {
+            <p class="text-muted">Kibo does not accept logins from this router until it proves you control it. The onboarding script sets this note on the router:</p>
+            <p class="code-block whitespace-normal">kibo-claim:@Router.ClaimToken</p>
+            @if (CurrentUser.Can(Permissions.ManageRouters))
+            {
+                <button class="btn btn-primary btn-sm" @onclick="VerifyAsync" disabled="@busy">Verify ownership</button>
+            }
+        }
+    </div>
+</section>
+
+<section class="card">
+    <div class="card-header">
+        <div>
+            <div class="card-title">Security audit</div>
+            <div class="text-[12px] text-muted">Read-only checks for common ways around the hotspot and billing.</div>
+        </div>
+        <button class="btn btn-sm" @onclick="AuditAsync" disabled="@(busy || Router.ApiKind == RouterApiKind.Simulator)">Run audit</button>
+    </div>
+    @if (Router.ApiKind == RouterApiKind.Simulator)
+    {
+        <div class="px-5 py-4 text-[13px] text-muted">The simulator has no real configuration to audit.</div>
+    }
+    else if (findings == null)
+    {
+        <div class="px-5 py-4 text-[13px] text-muted">Not audited yet.</div>
+    }
+    else if (findings.Count == 0)
+    {
+        <div class="px-5 py-4 text-[13px] text-ok">No issues found @Format.Ago(Router.PostureCheckedAt, Clock.GetUtcNow().UtcDateTime).</div>
+    }
+    else
+    {
+        <ul class="divide-y divide-line">
+            @foreach (var f in findings)
+            {
+                <li class="px-5 py-3 text-[13px]">
+                    <div class="flex items-center gap-2">
+                        <span class="badge @(f.Severity == "Critical" ? "badge-bad" : f.Severity == "High" ? "badge-warn" : "")">@f.Severity</span>
+                        <span class="font-medium">@f.Check</span>
+                    </div>
+                    <div class="mt-1">@f.Detail</div>
+                    <div class="num mt-1 text-[12px] text-muted">@f.Fix</div>
+                </li>
+            }
+        </ul>
+    }
+</section>
+
+@if (CurrentUser.Can(Permissions.ProvisionRouters) && Router.ApiKind != RouterApiKind.Simulator)
+{
+    <section class="card">
+        <div class="card-header">
+            <div>
+                <div class="card-title">Provisioning</div>
+                <div class="text-[12px] text-muted">Only items tagged kibo-managed and the settings listed are touched. A backup is saved first.</div>
+            </div>
+            <button class="btn btn-sm" @onclick="PlanAsync" disabled="@(busy || Router.OwnershipVerifiedAt == null)">Plan changes</button>
+        </div>
+        @if (message != null)
+        {
+            <div class="p-4"><Notice Kind="@(messageOk ? "ok" : "bad")" Text="@message" /></div>
+        }
+        @if (plan != null)
+        {
+            var changes = JsonSerializer.Deserialize<List<PlannedChange>>(plan.PlanJson) ?? [];
+            <div class="space-y-2 p-5 text-[13px]">
+                @if (changes.Count == 0)
+                {
+                    <p class="text-ok">Router already matches Kibo's configuration.</p>
+                }
+                else
+                {
+                    @foreach (var change in changes)
+                    {
+                        <div class="rounded-md border border-line p-3">
+                            <div class="font-medium">@change.Description</div>
+                            <div class="num mt-1 text-[12px] text-muted">/@change.Path @change.Action @string.Join(" ", change.Values.Where(v => v.Key != "secret").Select(v => $"{v.Key}={v.Value}"))</div>
+                            @if (change.Previous != null)
+                            {
+                                <div class="num text-[12px] text-faint">was: @string.Join(" ", change.Previous.Select(v => $"{v.Key}={(v.Value == "" ? "(empty)" : v.Value)}"))</div>
+                            }
+                        </div>
+                    }
+                    <button class="btn btn-primary btn-sm" @onclick="ApplyAsync" disabled="@busy">Apply @changes.Count change(s)</button>
+                }
+            </div>
+        }
+        @if (history.Count > 0)
+        {
+            <ul class="divide-y divide-line border-t border-line">
+                @foreach (var op in history)
+                {
+                    <li class="flex items-start justify-between gap-3 px-5 py-2.5 text-[12.5px]">
+                        <div><span class="badge @(op.Status == ProvisioningStatus.Applied ? "badge-ok" : op.Status == ProvisioningStatus.Planned ? "badge-info" : "badge-bad")">@op.Status</span> <span class="text-muted">@op.Detail</span></div>
+                        <span class="shrink-0 text-faint">@Format.Local(op.CreatedAt)</span>
+                    </li>
+                }
+            </ul>
+        }
+    </section>
+}
+
+@code {
+    [Parameter, EditorRequired] public Router Router { get; set; } = default!;
+    [Parameter] public EventCallback Changed { get; set; }
+
+    private List<PostureFinding>? findings;
+    private ProvisioningOperation? plan;
+    private List<ProvisioningOperation> history = [];
+    private bool busy;
+    private string? message;
+    private bool messageOk;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        findings = Router.PostureJson == null ? null : JsonSerializer.Deserialize<List<PostureFinding>>(Router.PostureJson);
+        history = await Provisioning.HistoryAsync(Router.Id);
+    }
+
+    private async Task VerifyAsync()
+    {
+        busy = true;
+        var result = await Provisioning.VerifyOwnershipAsync(Router.Id);
+        busy = false;
+        messageOk = result.Succeeded;
+        message = result.Succeeded ? "Ownership verified. RADIUS is now enabled for this router." : result.Error;
+        await Changed.InvokeAsync();
+    }
+
+    private async Task AuditAsync()
+    {
+        busy = true;
+        try
+        {
+            findings = await Provisioning.AuditPostureAsync(Router.Id);
+        }
+        catch (RouterOsException ex)
+        {
+            messageOk = false;
+            message = ex.Message;
+        }
+
+        busy = false;
+    }
+
+    private async Task PlanAsync()
+    {
+        busy = true;
+        var result = await Provisioning.PlanAsync(Router.Id);
+        busy = false;
+        plan = result.Value;
+        messageOk = result.Succeeded;
+        message = result.Succeeded ? null : result.Error;
+        history = await Provisioning.HistoryAsync(Router.Id);
+    }
+
+    private async Task ApplyAsync()
+    {
+        busy = true;
+        var result = await Provisioning.ApplyAsync(plan!.Id);
+        busy = false;
+        messageOk = result.Succeeded;
+        message = result.Succeeded ? result.Value!.Detail : result.Error;
+        plan = null;
+        history = await Provisioning.HistoryAsync(Router.Id);
+        await Changed.InvokeAsync();
+    }
+}

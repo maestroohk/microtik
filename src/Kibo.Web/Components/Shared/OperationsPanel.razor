@@ -1,0 +1,52 @@
+@using Kibo.Web.Features.Reports
+@inject OperationsService Operations
+
+<section class="card mt-6">
+    <div class="card-header">
+        <div class="card-title">Operations</div>
+        <span class="text-[12px] text-muted">Live checks across routers, RADIUS, accounting and payments</span>
+    </div>
+    @if (signals == null)
+    {
+        <div class="grid gap-px bg-line sm:grid-cols-2 xl:grid-cols-4">
+            @for (var i = 0; i < 8; i++) { <div class="bg-surface p-4"><div class="skeleton h-3 w-24"></div><div class="skeleton mt-3 h-5 w-28"></div></div> }
+        </div>
+    }
+    else
+    {
+        <div class="grid gap-px overflow-hidden rounded-b-[10px] bg-line sm:grid-cols-2 xl:grid-cols-4">
+            @foreach (var s in signals)
+            {
+                <a href="@(s.Link ?? "#")" class="block bg-surface p-4 transition hover:bg-surface-2 @(s.Link == null ? "pointer-events-none" : "")">
+                    <div class="flex items-center gap-2 text-[12.5px] font-medium text-muted">
+                        <span class="size-2 shrink-0 rounded-full @Dot(s.Level)" aria-hidden="true"></span>
+                        @s.Label
+                        <span class="sr-only">(@s.Level)</span>
+                    </div>
+                    <div class="mt-1.5 text-[15px] font-semibold tabular-nums">@s.Value</div>
+                    <div class="mt-0.5 text-[12px] text-muted">@s.Detail</div>
+                </a>
+            }
+        </div>
+    }
+</section>
+
+@code {
+    private List<OperationsSignal>? signals;
+
+    protected override async Task OnInitializedAsync() => signals = await Operations.LoadAsync();
+
+    public async Task RefreshAsync()
+    {
+        signals = await Operations.LoadAsync();
+        StateHasChanged();
+    }
+
+    private static string Dot(SignalLevel level) => level switch
+    {
+        SignalLevel.Good => "bg-ok",
+        SignalLevel.Attention => "bg-warn",
+        SignalLevel.Problem => "bg-bad",
+        _ => "bg-faint"
+    };
+}

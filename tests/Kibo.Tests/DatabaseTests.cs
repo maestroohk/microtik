@@ -219,10 +219,12 @@ public class DatabaseTests(TestDatabase database)
     {
         await using var db = database.System();
         var id = Guid.NewGuid().ToString("N");
+        var owner = await db.RadiusNas.FirstAsync(n => n.NasName == nas);
         db.RadiusAccounting.Add(new RadiusAccounting
         {
             AcctSessionId = id, AcctUniqueId = id, UserName = username, NasIpAddress = nas, AcctStartTime = start,
-            AcctUpdateTime = start, AcctSessionTime = 60, AcctInputOctets = bytes / 2, AcctOutputOctets = bytes - bytes / 2
+            AcctUpdateTime = start.AddMinutes(1), AcctStopTime = start.AddMinutes(1), AcctSessionTime = 60,
+            AcctInputOctets = bytes / 2, AcctOutputOctets = bytes - bytes / 2, TenantId = owner.TenantId, RouterId = owner.RouterId
         });
         await db.SaveChangesAsync();
     }

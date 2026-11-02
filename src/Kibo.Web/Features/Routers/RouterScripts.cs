@@ -15,6 +15,9 @@ public static class RouterScripts
         script.AppendLine("# Review every line before pasting into a RouterOS v7 terminal. Nothing is applied automatically.");
         script.AppendLine("# Assumes the hotspot itself already exists (/ip hotspot setup) on " + hotspotInterface + ".");
         script.AppendLine();
+        script.AppendLine("# 0. Ownership proof. Kibo enables RADIUS for this router only after it reads this note over the API.");
+        script.AppendLine($"/system note set show-at-login=no note=\"kibo-claim:{router.ClaimToken}\"");
+        script.AppendLine();
         script.AppendLine("# 1. Restricted API user for Kibo (read + hotspot session control only)");
         script.AppendLine("/user group add name=kibo-api policy=read,write,api,rest-api,test,!ftp,!local,!telnet,!ssh,!reboot,!policy,!password,!sniff,!sensitive,!romon,!winbox,!web");
         script.AppendLine($"/user add name={router.ApiUsername} group=kibo-api address={settings.ApiAllowedFrom} password=\"<paste the API password you entered in Kibo>\"");

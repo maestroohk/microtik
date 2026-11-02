@@ -7,6 +7,7 @@ public static class DatabaseSetup
     public static async Task MigrateAsync(AppDbContext db)
     {
         await db.Database.MigrateAsync();
+        await db.Database.ExecuteSqlRawAsync(ReadEmbeddedSql("radius_accounting.sql"));
         await db.Database.ExecuteSqlRawAsync(ReadEmbeddedSql("radius_functions.sql"));
     }
 

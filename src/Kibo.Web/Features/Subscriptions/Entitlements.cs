@@ -2,7 +2,8 @@ using Kibo.Web.Data.Entities;
 
 namespace Kibo.Web.Features.Subscriptions;
 
-public record UsageTotals(long Bytes, long Seconds, DateTime? FirstSessionStart);
+public record UsageTotals(long Bytes, long Seconds, DateTime? FirstSessionStart, DateTime? ObservedAt = null,
+    int OpenSessions = 0, long UploadBytes = 0, long DownloadBytes = 0);
 
 public record LifecycleDecision(SubscriptionStatus Status, string? EndReason);
 
@@ -48,6 +49,8 @@ public static class Entitlements
             AccessWindowEnd = package.AccessWindowEnd,
             GraceSeconds = package.GraceMinutes * 60,
             IsRecurring = package.IsRecurring,
+            FairUseEnforcement = package.FairUseEnforcement,
+            AccountingIntervalSeconds = Math.Clamp(package.AccountingIntervalSeconds, 15, 90),
             PurchasedAt = now,
             ActivateBy = now.AddDays(Math.Max(1, package.ActivationDeadlineDays))
         };
@@ -185,6 +188,8 @@ public static class Entitlements
             ? RateLimit(current.ThrottledUploadKbps ?? current.UploadKbps, current.ThrottledDownloadKbps ?? current.DownloadKbps)
             : null;
         access.SimultaneousUse = current.MaxDevices;
+        access.AccountingIntervalSeconds = Math.Clamp(current.AccountingIntervalSeconds, 15, 90);
+        access.FairUseRouterCutoff = current.FairUseEnforcement == FairUseEnforcement.RouterCutoff;
         access.WindowStart = current.AccessWindowStart;
         access.WindowEnd = current.AccessWindowEnd;
         return access;

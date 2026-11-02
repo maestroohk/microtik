@@ -43,6 +43,13 @@ public class Router : TenantEntity
     public int CoaPort { get; set; } = 3799;
     public string HotspotInterface { get; set; } = "";
     public string UplinkInterface { get; set; } = "";
+    public string HotspotLoginHost { get; set; } = "";
+    public string ClaimToken { get; set; } = "";
+    public DateTime? OwnershipVerifiedAt { get; set; }
+    public string? HardwareId { get; set; }
+    public string? PostureJson { get; set; }
+    public DateTime? PostureCheckedAt { get; set; }
+    public DateTime? DriftDetectedAt { get; set; }
     public bool ProvisioningEnabled { get; set; }
     public RouterStatus Status { get; set; } = RouterStatus.Pending;
     public string? Identity { get; set; }
@@ -96,4 +103,49 @@ public class RouterEvent
     public RouterEventKind Kind { get; set; }
     public string Message { get; set; } = "";
     public DateTime OccurredAt { get; set; }
+}
+
+public class EnforcementAction
+{
+    public long Id { get; set; }
+    public Guid TenantId { get; set; }
+    public Guid? RouterId { get; set; }
+    public string Username { get; set; } = "";
+    public string Kind { get; set; } = "";
+    public string Method { get; set; } = "";
+    public bool Succeeded { get; set; }
+    public string Detail { get; set; } = "";
+    public DateTime CreatedAt { get; set; }
+}
+
+public enum ProvisioningStatus
+{
+    Planned,
+    Applied,
+    RolledBack,
+    Failed
+}
+
+public class ProvisioningOperation
+{
+    public long Id { get; set; }
+    public Guid TenantId { get; set; }
+    public Guid RouterId { get; set; }
+    public ProvisioningStatus Status { get; set; }
+    public string PlanJson { get; set; } = "";
+    public string Detail { get; set; } = "";
+    public string RequestedBy { get; set; } = "";
+    public DateTime CreatedAt { get; set; }
+    public DateTime? CompletedAt { get; set; }
+}
+
+public class RouterBackup
+{
+    public long Id { get; set; }
+    public Guid TenantId { get; set; }
+    public Guid RouterId { get; set; }
+    public string Reason { get; set; } = "";
+    public string ExportProtected { get; set; } = "";
+    public int ExportLength { get; set; }
+    public DateTime CreatedAt { get; set; }
 }

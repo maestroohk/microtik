@@ -47,7 +47,7 @@
             return;
         }
 
-        var loginUrl = Portal.BuildRouterLoginUrl(Portal.ReadContext(HttpAccessor.HttpContext!), code, code);
+        var loginUrl = Portal.BuildRouterLoginUrl(Portal.ReadContext(HttpAccessor.HttpContext!), code, code, site!.TrustedLoginHosts);
         if (loginUrl == null)
         {
             error = "Reconnect to the WiFi network first, then open any website to get back to this page.";

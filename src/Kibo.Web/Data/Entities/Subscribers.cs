@@ -107,6 +107,8 @@ public class Package : TenantEntity
     public TimeOnly? AccessWindowStart { get; set; }
     public TimeOnly? AccessWindowEnd { get; set; }
     public int GraceMinutes { get; set; }
+    public FairUseEnforcement FairUseEnforcement { get; set; } = FairUseEnforcement.RateChange;
+    public int AccountingIntervalSeconds { get; set; } = 60;
     public bool IsRecurring { get; set; }
     public bool IsPromotional { get; set; }
     public DateTime? AvailableFrom { get; set; }
@@ -116,6 +118,12 @@ public class Package : TenantEntity
     public int SortOrder { get; set; }
     public Guid? SiteId { get; set; }
     public DateTime CreatedAt { get; set; }
+}
+
+public enum FairUseEnforcement
+{
+    RateChange,
+    RouterCutoff
 }
 
 public enum SubscriptionStatus
@@ -165,6 +173,10 @@ public class Subscription : TenantEntity
     public TimeOnly? AccessWindowEnd { get; set; }
     public int GraceSeconds { get; set; }
     public bool IsRecurring { get; set; }
+    public FairUseEnforcement FairUseEnforcement { get; set; }
+    public int AccountingIntervalSeconds { get; set; } = 60;
+    public long? ThrottleOvershootBytes { get; set; }
+    public DateTime? UsageObservedAt { get; set; }
 
     public DateTime PurchasedAt { get; set; }
     public DateTime ActivateBy { get; set; }
@@ -199,6 +211,8 @@ public class RadiusAccess
     public string RateLimit { get; set; } = "";
     public string? ThrottledRateLimit { get; set; }
     public int SimultaneousUse { get; set; } = 1;
+    public int AccountingIntervalSeconds { get; set; } = 60;
+    public bool FairUseRouterCutoff { get; set; }
     public TimeOnly? WindowStart { get; set; }
     public TimeOnly? WindowEnd { get; set; }
     public string TimeZone { get; set; } = "UTC";
@@ -237,6 +251,29 @@ public class RadiusAccounting
     public string? AcctTerminateCause { get; set; }
     public string? FramedIpAddress { get; set; }
     public string? Class { get; set; }
+    public Guid? TenantId { get; set; }
+    public Guid? RouterId { get; set; }
+    public Guid? SubscriptionId { get; set; }
+    public DateTime? NasEventTime { get; set; }
+    public int UpdateCount { get; set; }
+}
+
+public class RadiusAccountingEvent
+{
+    public long Id { get; set; }
+    public DateTime ReceivedAt { get; set; }
+    public string NasIpAddress { get; set; } = "";
+    public Guid? TenantId { get; set; }
+    public string StatusType { get; set; } = "";
+    public string? SessionId { get; set; }
+    public string? UserName { get; set; }
+    public long SessionTime { get; set; }
+    public long InputBytes { get; set; }
+    public long OutputBytes { get; set; }
+    public DateTime? NasEventTime { get; set; }
+    public string? Class { get; set; }
+    public long? RadAcctId { get; set; }
+    public string Outcome { get; set; } = "";
 }
 
 public class RadiusPostAuth

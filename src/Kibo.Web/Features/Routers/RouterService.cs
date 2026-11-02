@@ -44,6 +44,9 @@ public class RouterForm
 
     [StringLength(64)]
     public string UplinkInterface { get; set; } = "";
+
+    [StringLength(253)]
+    public string HotspotLoginHost { get; set; } = "";
 }
 
 public class RouterService(KiboDb kiboDb, CurrentUser currentUser, SecretProtector secrets, AuditLogger audit,
@@ -119,18 +122,11 @@ public class RouterService(KiboDb kiboDb, CurrentUser currentUser, SecretProtect
         {
             CreatedAt = clock.GetUtcNow().UtcDateTime,
             RadiusSecret = SecretProtector.NewSecret(24),
-            ApiPasswordProtected = secrets.Protect(form.ApiPassword)
+            ApiPasswordProtected = secrets.Protect(form.ApiPassword),
+            ClaimToken = SecretProtector.NewCode(16, "abcdefghjkmnpqrstuvwxyz23456789")
         };
         Apply(router, form);
         db.Routers.Add(router);
-        db.RadiusNas.Add(new RadiusNas
-        {
-            NasName = router.NasIpAddress,
-            ShortName = router.Name,
-            Secret = router.RadiusSecret,
-            Description = $"Kibo router {router.Id}",
-            RouterId = router.Id
-        });
         await db.SaveChangesAsync();
         await audit.WriteAsync("router.registered", "Router", router.Id.ToString(), $"{router.Name} ({router.ManagementHost})");
         return OperationResult<Router>.Ok(router);
@@ -152,8 +148,8 @@ public class RouterService(KiboDb kiboDb, CurrentUser currentUser, SecretProtect
             return OperationResult<Router>.Fail("Router not found.");
         }
 
-        var nas = await db.RadiusNas.FirstAsync(n => n.RouterId == router.Id);
-        if (nas.NasName != form.NasIpAddress &&
+        var nas = await db.RadiusNas.FirstOrDefaultAsync(n => n.RouterId == router.Id);
+        if (nas != null && nas.NasName != form.NasIpAddress &&
             await db.RadiusNas.IgnoreQueryFilters().AnyAsync(n => n.NasName == form.NasIpAddress))
         {
             return OperationResult<Router>.Fail("This RADIUS source address is already registered to another router.");
@@ -165,8 +161,11 @@ public class RouterService(KiboDb kiboDb, CurrentUser currentUser, SecretProtect
             router.ApiPasswordProtected = secrets.Protect(form.ApiPassword);
         }
 
-        nas.NasName = router.NasIpAddress;
-        nas.ShortName = router.Name;
+        if (nas != null)
+        {
+            nas.NasName = router.NasIpAddress;
+            nas.ShortName = router.Name;
+        }
         await db.SaveChangesAsync();
         await audit.WriteAsync("router.updated", "Router", router.Id.ToString(), router.Name);
         return OperationResult<Router>.Ok(router);
@@ -182,9 +181,12 @@ public class RouterService(KiboDb kiboDb, CurrentUser currentUser, SecretProtect
             return OperationResult<string>.Fail("Router not found.");
         }
 
-        var nas = await db.RadiusNas.FirstAsync(n => n.RouterId == router.Id);
+        var nas = await db.RadiusNas.FirstOrDefaultAsync(n => n.RouterId == router.Id);
         router.RadiusSecret = SecretProtector.NewSecret(24);
-        nas.Secret = router.RadiusSecret;
+        if (nas != null)
+        {
+            nas.Secret = router.RadiusSecret;
+        }
         await db.SaveChangesAsync();
         await audit.WriteAsync("router.radius_secret_rotated", "Router", router.Id.ToString(), router.Name);
         return OperationResult<string>.Ok(router.RadiusSecret);
@@ -255,6 +257,7 @@ public class RouterService(KiboDb kiboDb, CurrentUser currentUser, SecretProtect
         router.CoaPort = form.CoaPort;
         router.HotspotInterface = form.HotspotInterface.Trim();
         router.UplinkInterface = form.UplinkInterface.Trim();
+        router.HotspotLoginHost = form.HotspotLoginHost.Trim().ToLowerInvariant();
     }
 
     private static string? ValidateAddresses(RouterForm form)

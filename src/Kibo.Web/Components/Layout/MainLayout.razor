@@ -51,6 +51,7 @@
                         <div class="eyebrow px-2.5 pb-1.5">Network</div>
                         <NavLink class="nav-link" href="/routers"><Icon Name="router" /> Routers</NavLink>
                         <NavLink class="nav-link" href="/sessions"><Icon Name="activity" /> Live sessions</NavLink>
+                        <NavLink class="nav-link" href="/accounting"><Icon Name="gauge" /> Accounting health</NavLink>
                     </div>
                     <div class="space-y-0.5">
                         <div class="eyebrow px-2.5 pb-1.5">Subscribers</div>
@@ -107,6 +108,7 @@
                         <div class="truncate text-[13px] font-medium">@CurrentUser.Name</div>
                         <div class="truncate text-[11.5px] text-faint">@(CurrentUser.IsPlatformAdmin ? "Platform admin" : CurrentUser.Role.ToString())</div>
                     </div>
+                    <a href="/account/security" class="btn btn-ghost btn-sm px-2" title="Sign-in security" aria-label="Sign-in security"><Icon Name="key" /></a>
                     <form method="post" action="/account/logout">
                         <AntiforgeryToken />
                         <button type="submit" class="btn btn-ghost btn-sm px-2" title="Sign out" aria-label="Sign out"><Icon Name="logout" /></button>
