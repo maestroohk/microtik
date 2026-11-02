@@ -235,7 +235,7 @@
         events = await Routers.GetEventsAsync(Id);
         var options = Onboarding.Value;
         script = RouterScripts.Onboarding(router, router.Site!, new OnboardingSettings(options.RadiusServerAddress,
-            options.PortalBaseUrl, new Uri(options.PortalBaseUrl).Host, options.ApiAllowedFrom));
+            options.PortalBaseUrl, new Uri(options.PortalBaseUrl).Host, options.ApiAllowedFrom, new Uri(options.PortalBaseUrl).Port));
     }
 
     private Task OnRouterChanged(Guid tenantId, Guid routerId) => routerId != Id

@@ -45,6 +45,16 @@ public class DatabaseTests(TestDatabase database)
     }
 
     [Fact]
+    public async Task A_radius_client_without_a_tenant_cannot_be_saved()
+    {
+        var (a, _, _) = await database.CreateTenantAsync("Mike", "10.99.0.13");
+        await using var scoped = database.KiboDb().ForTenant(a.Id);
+        scoped.RadiusNas.Add(new RadiusNas { NasName = "10.99.0.99", ShortName = "x", Secret = "s", RouterId = Guid.NewGuid() });
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => scoped.SaveChangesAsync());
+    }
+
+    [Fact]
     public async Task Radius_only_authorises_a_username_on_routers_of_the_owning_tenant()
     {
         var (a, _, _) = await database.CreateTenantAsync("Echo", "10.99.0.5");

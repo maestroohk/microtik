@@ -211,6 +211,13 @@ public class PortalService(KiboDb kiboDb, IDataProtectionProvider protection, IW
         return await db.AccessAccounts.AsNoTracking().FirstOrDefaultAsync(a => a.Id == accessAccountId);
     }
 
+    public async Task<AccessAccount?> FindVoucherAccountAsync(Guid tenantId, string code)
+    {
+        await using var db = kiboDb.ForTenant(tenantId);
+        return await db.AccessAccounts.AsNoTracking()
+            .FirstOrDefaultAsync(a => a.Username == code && a.Kind == AccessAccountKind.Voucher && a.Status == AccessAccountStatus.Active);
+    }
+
     public string? NormalizeVoucherCode(string? input)
     {
         if (string.IsNullOrWhiteSpace(input))

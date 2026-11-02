@@ -238,6 +238,22 @@ public class AppDbContext : DbContext
 
     private void GuardTenantOwnership()
     {
+        foreach (var entry in ChangeTracker.Entries<RadiusNas>().Where(e => e.State is EntityState.Added or EntityState.Modified))
+        {
+            if (entry.Entity.TenantId == Guid.Empty || (TenantScope != null && entry.Entity.TenantId != TenantScope))
+            {
+                throw new InvalidOperationException("A RADIUS client must belong to the tenant that owns the router.");
+            }
+        }
+
+        foreach (var entry in ChangeTracker.Entries<RadiusAccess>().Where(e => e.State is EntityState.Added or EntityState.Modified))
+        {
+            if (entry.Entity.TenantId == Guid.Empty || (TenantScope != null && entry.Entity.TenantId != TenantScope))
+            {
+                throw new InvalidOperationException("RADIUS access must belong to the tenant that owns the account.");
+            }
+        }
+
         if (TenantScope == null)
         {
             return;

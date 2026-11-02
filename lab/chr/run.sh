@@ -5,6 +5,10 @@ if [ ! -f "$IMAGE" ]; then
     unzip -p "/images/chr-${CHR_VERSION}.img.zip" > "$IMAGE"
 fi
 
+for stale in /var/run/netns/phone*; do
+    [ -e "$stale" ] && { umount "$stale" 2>/dev/null || true; rm -f "$stale"; }
+done
+
 ADDRESS=$(ip -4 -o addr show eth0 | awk '{print $4}')
 GATEWAY=$(ip route | awk '/default/ {print $3}')
 echo "$ADDRESS $GATEWAY" > /data/network
@@ -44,6 +48,11 @@ qemu-system-x86_64 -name "chr-${CHR_NAME}" -machine accel=$ACCEL -m 256 -smp 1 -
     -netdev tap,id=lan,ifname=tap1,script=no,downscript=no -device virtio-net-pci,netdev=lan \
     -serial tcp:127.0.0.1:5555,server,nowait -monitor none -display none &
 QEMU=$!
+
+for n in 1 2 3; do
+    mkdir -p "/etc/netns/phone$n"
+    echo "nameserver ${CHR_LAN_PREFIX:-10.5.61}.1" > "/etc/netns/phone$n/resolv.conf"
+done
 
 if [ ! -f /data/bootstrapped ]; then
     sleep 5

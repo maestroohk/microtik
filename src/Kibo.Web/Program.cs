@@ -148,20 +148,7 @@ builder.Services.AddHostedService<RenewalWorker>();
 builder.Services.AddRateLimiter(options =>
 {
     options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
-    options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(http =>
-    {
-        var path = http.Request.Path.Value ?? "";
-        var isSensitivePost = HttpMethods.IsPost(http.Request.Method) &&
-                              (path.StartsWith("/p/") || path.StartsWith("/account/login"));
-        if (!isSensitivePost)
-        {
-            return RateLimitPartition.GetNoLimiter("unlimited");
-        }
-
-        var client = http.Connection.RemoteIpAddress?.ToString() ?? "unknown";
-        return RateLimitPartition.GetFixedWindowLimiter($"{client}:{path.Split('/').ElementAtOrDefault(3)}", _ =>
-            new FixedWindowRateLimiterOptions { PermitLimit = 10, Window = TimeSpan.FromMinutes(1), QueueLimit = 0 });
-    });
+    options.GlobalLimiter = RateLimits.Create();
 });
 
 builder.Services.AddRazorComponents()

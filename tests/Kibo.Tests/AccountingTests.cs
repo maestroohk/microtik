@@ -212,6 +212,7 @@ public class AccountingTests(TestDatabase database)
 
         var first = await ReplyAsync("family", "10.98.0.11");
         Assert.Equal("10000000", first["Mikrotik-Total-Limit"]);
+        Assert.Equal("60", first["Acct-Interim-Interval"]);
 
         await SendAsync(new Packet("Start", "f1", "family", "10.98.0.11", Class: subscription.ToString()));
         await SendAsync(new Packet("Interim-Update", "f1", "family", "10.98.0.11", 1, 1_000_000, 0, 1_000_000,
@@ -281,6 +282,7 @@ public class AccountingTests(TestDatabase database)
             TenantId = tenantId, Username = username, AccessAccountId = account.Id, SubscriptionId = subscription.Id,
             Password = username, Enabled = true, ExpiresAt = DateTime.UtcNow.AddDays(1), DataLimitBytes = dataLimit,
             CountingSince = DateTime.UtcNow.AddMinutes(-1), RateLimit = "1000k/2000k", SimultaneousUse = devices,
+            AccountingIntervalSeconds = 0,
             TimeZone = "Africa/Kampala", UpdatedAt = DateTime.UtcNow
         });
         await db.SaveChangesAsync();

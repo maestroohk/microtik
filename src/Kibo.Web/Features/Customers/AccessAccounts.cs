@@ -49,6 +49,7 @@ public static class AccessAccounts
             Kind = AccessAccountKind.Hotspot,
             Username = customer.PhoneNumber,
             Password = SecretProtector.NewCode(6, AccessCodeAlphabet),
+            RouterSecret = SecretProtector.NewSecret(18),
             CreatedAt = now
         };
         db.AccessAccounts.Add(account);

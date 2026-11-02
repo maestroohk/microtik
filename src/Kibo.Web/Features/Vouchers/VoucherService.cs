@@ -126,6 +126,7 @@ public class VoucherService(KiboDb kiboDb, CurrentUser currentUser, AuditLogger 
                 Kind = AccessAccountKind.Voucher,
                 Username = code,
                 Password = code,
+                RouterSecret = SecretProtector.NewSecret(18),
                 CreatedAt = now
             };
             var subscription = Entitlements.CreateFromPackage(package, account, now, SubscriptionSource.Voucher, code, false,

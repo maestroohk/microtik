@@ -195,6 +195,9 @@ public class SimulatedRouter(RadiusClient radius, IOptions<LabOptions> options, 
         return removed;
     }
 
+    public string? UserAtAddress(string ip) =>
+        sessions.Values.FirstOrDefault(s => (s.FramedIp ?? s.Device.Ip) == ip)?.User;
+
     public int ChangeRate(string username, string rate)
     {
         var (up, down) = ParseRate(rate);
@@ -266,7 +269,7 @@ public class SimulatedRouter(RadiusClient radius, IOptions<LabOptions> options, 
 
             if (session.TotalLimitBytes != null && session.BytesIn + session.BytesOut >= session.TotalLimitBytes)
             {
-                await RemoveSessionAsync(session.Id, "Session-Timeout", ct);
+                await RemoveSessionAsync(session.Id, "NAS-Request", ct);
                 session.Device.LastMessage = "Traffic limit reached";
                 continue;
             }
@@ -346,6 +349,7 @@ public class SimulatedRouter(RadiusClient radius, IOptions<LabOptions> options, 
         "Session-Timeout" => 5,
         "Admin-Reset" => 6,
         "NAS-Reboot" => 11,
+        "NAS-Request" => 10,
         _ => 6
     };
 

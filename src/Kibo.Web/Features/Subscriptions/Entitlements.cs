@@ -155,7 +155,9 @@ public static class Entitlements
             TenantId = account.TenantId,
             Username = account.Username,
             AccessAccountId = account.Id,
-            Password = account.Password,
+            Password = account.Kind == AccessAccountKind.Pppoe || string.IsNullOrEmpty(account.RouterSecret)
+                ? account.Password
+                : account.RouterSecret,
             ServiceType = account.Kind == AccessAccountKind.Pppoe ? "ppp" : "hotspot",
             FramedIpAddress = account.StaticIpAddress,
             TimeZone = tenant.TimeZone,

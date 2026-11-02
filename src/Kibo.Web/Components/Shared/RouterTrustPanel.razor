@@ -99,10 +99,10 @@
                     {
                         <div class="rounded-md border border-line p-3">
                             <div class="font-medium">@change.Description</div>
-                            <div class="num mt-1 text-[12px] text-muted">/@change.Path @change.Action @string.Join(" ", change.Values.Where(v => v.Key != "secret").Select(v => $"{v.Key}={v.Value}"))</div>
+                            <div class="num mt-1 text-[12px] text-muted">/@change.Path @change.Action @string.Join(" ", change.Values.Where(v => v.Key is not ("secret" or "contents")).Select(v => $"{v.Key}={v.Value}"))</div>
                             @if (change.Previous != null)
                             {
-                                <div class="num text-[12px] text-faint">was: @string.Join(" ", change.Previous.Select(v => $"{v.Key}={(v.Value == "" ? "(empty)" : v.Value)}"))</div>
+                                <div class="num text-[12px] text-faint">was: @string.Join(" ", change.Previous.Where(v => v.Key != "contents").Select(v => $"{v.Key}={(v.Value == "" ? "(empty)" : v.Value)}"))</div>
                             }
                         </div>
                     }

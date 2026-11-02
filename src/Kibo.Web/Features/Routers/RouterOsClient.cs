@@ -156,10 +156,17 @@ public partial class RouterOsClient(IHttpClientFactory httpClientFactory)
     }
 
     public async Task UpdateAsync(RouterConnection connection, string path, string id, JsonObject changes, CancellationToken ct = default) =>
-        await SendAsync(connection, HttpMethod.Patch, $"{path}/{Uri.EscapeDataString(id)}", changes, ct);
+        await SendAsync(connection, HttpMethod.Patch, $"{path}/{ItemId(id)}", changes, ct);
 
     public async Task DeleteAsync(RouterConnection connection, string path, string id, CancellationToken ct = default) =>
-        await SendAsync(connection, HttpMethod.Delete, $"{path}/{Uri.EscapeDataString(id)}", null, ct);
+        await SendAsync(connection, HttpMethod.Delete, $"{path}/{ItemId(id)}", null, ct);
+
+    public static string ItemId(string id) => ItemIdPattern().IsMatch(id)
+        ? id
+        : throw new RouterOsException(RouterFailureKind.ApiError, $"Unexpected RouterOS item id '{id}'.");
+
+    [GeneratedRegex(@"^\*{1,2}[0-9A-Za-z]{1,64}$")]
+    private static partial Regex ItemIdPattern();
 
     public async Task<JsonNode?> CommandAsync(RouterConnection connection, string path, JsonObject body, CancellationToken ct = default) =>
         await SendAsync(connection, HttpMethod.Post, path, body, ct);
@@ -189,7 +196,7 @@ public partial class RouterOsClient(IHttpClientFactory httpClientFactory)
         request.Headers.Authorization = new AuthenticationHeaderValue("Basic", token);
         if (body != null)
         {
-            request.Content = JsonContent.Create(body);
+            request.Content = new StringContent(body.ToJsonString(), Encoding.UTF8, "application/json");
         }
 
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);

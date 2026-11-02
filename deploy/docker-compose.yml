@@ -108,7 +108,7 @@ services:
     profiles: ["chr"]
     build:
       context: ../lab/chr
-    cap_add: [NET_ADMIN]
+    cap_add: [NET_ADMIN, SYS_ADMIN]
     devices:
       - /dev/net/tun
     cpus: 1.0
@@ -116,6 +116,7 @@ services:
     environment:
       CHR_VERSION: "7.25"
       CHR_NAME: lab-chr-1
+      CHR_LAN_PREFIX: "10.5.61"
       CHR_MAC: "52:54:00:4b:00:31"
       CHR_ADMIN_PASSWORD: ${KIBO_CHR_ADMIN_PASSWORD:?set KIBO_CHR_ADMIN_PASSWORD in deploy/.env}
       CHR_API_USER: kibo-api
@@ -123,9 +124,6 @@ services:
     volumes:
       - ../lab/chr/images:/images:ro
       - chr-1-data:/data
-    ports:
-      - "127.0.0.1:58731:80"
-      - "127.0.0.1:53731:3799/udp"
     networks:
       kibo-lab-wan:
         ipv4_address: 10.247.0.31
@@ -134,7 +132,7 @@ services:
     profiles: ["chr"]
     build:
       context: ../lab/chr
-    cap_add: [NET_ADMIN]
+    cap_add: [NET_ADMIN, SYS_ADMIN]
     devices:
       - /dev/net/tun
     cpus: 1.0
@@ -142,6 +140,7 @@ services:
     environment:
       CHR_VERSION: "7.24.6"
       CHR_NAME: lab-chr-2
+      CHR_LAN_PREFIX: "10.5.62"
       CHR_MAC: "52:54:00:4b:00:32"
       CHR_ADMIN_PASSWORD: ${KIBO_CHR_ADMIN_PASSWORD:?set KIBO_CHR_ADMIN_PASSWORD in deploy/.env}
       CHR_API_USER: kibo-api
@@ -149,12 +148,43 @@ services:
     volumes:
       - ../lab/chr/images:/images:ro
       - chr-2-data:/data
-    ports:
-      - "127.0.0.1:58732:80"
-      - "127.0.0.1:53732:3799/udp"
     networks:
       kibo-lab-wan:
         ipv4_address: 10.247.0.32
+
+  lab-files:
+    profiles: ["chr"]
+    image: alpine:3.20
+    command: ["sh", "-c", "apk add --no-cache busybox-extras >/dev/null && mkdir -p /www && head -c 52428800 /dev/urandom > /www/50mb.bin && echo kibo-lab-ok > /www/index.html && busybox-extras httpd -f -p 80 -h /www"]
+    cpus: 0.25
+    mem_limit: 128m
+    networks:
+      kibo-lab-wan:
+        ipv4_address: 10.247.0.50
+
+  chr-gateway:
+    profiles: ["chr"]
+    image: alpine:3.20
+    command:
+      - sh
+      - -c
+      - >
+        apk add --no-cache socat >/dev/null &&
+        socat TCP-LISTEN:8031,fork,reuseaddr TCP:10.247.0.31:80 &
+        socat TCP-LISTEN:8032,fork,reuseaddr TCP:10.247.0.32:80 &
+        socat UDP-LISTEN:3799,fork,reuseaddr UDP:10.247.0.31:3799 &
+        socat UDP-LISTEN:3800,fork,reuseaddr UDP:10.247.0.32:3800 &
+        wait
+    cpus: 0.25
+    mem_limit: 64m
+    ports:
+      - "127.0.0.1:58731:8031"
+      - "127.0.0.1:58732:8032"
+      - "127.0.0.1:3799:3799/udp"
+      - "127.0.0.1:3800:3800/udp"
+    networks:
+      kibo-lab-wan:
+        ipv4_address: 10.247.0.40
 
 volumes:
   kibo-pgdata:

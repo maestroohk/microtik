@@ -2,3 +2,4 @@
 *.sh text eol=lf
 deploy/freeradius/* text eol=lf
 deploy/postgres/** text eol=lf
+lab/chr/* text eol=lf

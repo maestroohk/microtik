@@ -59,7 +59,14 @@ public class RouterHealthChecker(
             long rx = 0, tx = 0;
             if (!string.IsNullOrEmpty(router.UplinkInterface))
             {
-                (rx, tx) = await client.MonitorTrafficAsync(connection, router.UplinkInterface, ct);
+                try
+                {
+                    (rx, tx) = await client.MonitorTrafficAsync(connection, router.UplinkInterface, ct);
+                }
+                catch (RouterOsException ex) when (ex.Kind == RouterFailureKind.ApiError)
+                {
+                    logger.LogInformation("Traffic monitor unavailable on {Router}: {Message}", router.Name, ex.Message);
+                }
             }
 
             var capabilitiesChanged = router.RouterOsVersion != resource.Version || router.BoardName != resource.BoardName;

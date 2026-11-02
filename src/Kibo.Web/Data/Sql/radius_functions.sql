@@ -259,7 +259,7 @@ LANGUAGE sql STABLE AS $$
     UNION ALL
     SELECT 5, p_username, 'Mikrotik-Total-Limit-Gigawords', (e.total_limit / 4294967296)::text, ':=' FROM e WHERE e.allowed AND e.total_limit IS NOT NULL
     UNION ALL
-    SELECT 6, p_username, 'Acct-Interim-Interval', COALESCE(e.interim_seconds, 60)::text, ':=' FROM e WHERE e.allowed
+    SELECT 6, p_username, 'Acct-Interim-Interval', LEAST(GREATEST(COALESCE(NULLIF(e.interim_seconds, 0), 60), 15), 90)::text, ':=' FROM e WHERE e.allowed
     UNION ALL
     SELECT 7, p_username, 'Class', e.subscription_id::text, ':=' FROM e WHERE e.allowed AND e.subscription_id IS NOT NULL
     UNION ALL

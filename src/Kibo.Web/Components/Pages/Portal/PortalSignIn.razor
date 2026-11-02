@@ -107,6 +107,6 @@
 
         var account = result.Value!;
         status = await Portal.GetStatusAsync(site.Site.TenantId, account.Id);
-        loginUrl = Portal.BuildRouterLoginUrl(Portal.ReadContext(HttpAccessor.HttpContext!), account.Username, account.Password, site!.TrustedLoginHosts);
+        loginUrl = Portal.BuildRouterLoginUrl(Portal.ReadContext(HttpAccessor.HttpContext!), account.Username, account.RouterSecret, site!.TrustedLoginHosts);
     }
 }

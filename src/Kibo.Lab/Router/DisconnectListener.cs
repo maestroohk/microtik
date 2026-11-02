@@ -45,7 +45,9 @@ public class DisconnectListener(SimulatedRouter router, IOptions<LabOptions> opt
             return null;
         }
 
-        var username = request.Find(RadiusAttr.UserName)?.AsString();
+        var framed = request.Find(RadiusAttr.FramedIpAddress);
+        var framedIp = framed == null ? null : new IPAddress(framed.Value).ToString();
+        var username = framedIp == null ? null : router.UserAtAddress(framedIp);
         var response = new RadiusPacket { Identifier = request.Identifier };
         var rate = request.FindVendor(RadiusAttr.MikrotikVendorId, RadiusAttr.MikrotikRateLimit)?.AsString();
         if (request.Code == RadiusCode.CoaRequest)
@@ -61,7 +63,7 @@ public class DisconnectListener(SimulatedRouter router, IOptions<LabOptions> opt
         else
         {
             response.Code = RadiusCode.DisconnectNak;
-            response.Add(101, 503u);
+            response.Add(101, framedIp == null ? 406u : 503u);
         }
 
         return response.EncodeResponse(request.Authenticator, secret);

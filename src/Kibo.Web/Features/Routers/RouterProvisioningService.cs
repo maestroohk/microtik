@@ -81,7 +81,7 @@ public class RouterProvisioningService(
         {
             db.RadiusNas.Add(new RadiusNas
             {
-                NasName = router.NasIpAddress, ShortName = router.Name, Secret = router.RadiusSecret,
+                TenantId = router.TenantId, NasName = router.NasIpAddress, ShortName = router.Name, Secret = router.RadiusSecret,
                 Description = $"Kibo router {router.Id}", RouterId = router.Id
             });
         }
@@ -129,7 +129,8 @@ public class RouterProvisioningService(
         static string V(JsonObject o, string key) => o[key]?.ToString() ?? "";
         static bool Enabled(JsonObject o) => V(o, "disabled") != "true";
 
-        foreach (var profile in await List("ip/hotspot/profile"))
+        var usedProfiles = (await List("ip/hotspot")).Where(Enabled).Select(h => V(h, "profile")).ToHashSet();
+        foreach (var profile in (await List("ip/hotspot/profile")).Where(p => usedProfiles.Contains(V(p, "name"))))
         {
             var name = V(profile, "name");
             var loginBy = V(profile, "login-by");
@@ -170,10 +171,12 @@ public class RouterProvisioningService(
                 "Remove the bypassed IP binding unless it is infrastructure (for example an access point)."));
         }
 
-        foreach (var garden in await List("ip/hotspot/walled-garden"))
+        foreach (var garden in (await List("ip/hotspot/walled-garden")).Where(g => V(g, "dynamic") != "true"))
         {
             var host = V(garden, "dst-host");
-            if (Enabled(garden) && V(garden, "action") != "deny" && (host == "*" || host == "*.*" || host == ""))
+            var unrestricted = host is "*" or "*.*" ||
+                               (host == "" && V(garden, "dst-address") == "" && V(garden, "path") == "" && V(garden, "dst-port") == "");
+            if (Enabled(garden) && V(garden, "action") != "deny" && unrestricted)
             {
                 findings.Add(new("Critical", "Walled garden", "A walled-garden rule allows every host before login.",
                     "Restrict walled-garden entries to the portal and payment hosts."));
@@ -183,7 +186,8 @@ public class RouterProvisioningService(
         foreach (var garden in await List("ip/hotspot/walled-garden/ip"))
         {
             var destination = V(garden, "dst-address");
-            if (Enabled(garden) && V(garden, "action") == "accept" && (destination == "" || destination == "0.0.0.0/0"))
+            var anyDestination = (destination == "" || destination == "0.0.0.0/0") && V(garden, "dst-host") == "";
+            if (Enabled(garden) && V(garden, "dynamic") != "true" && V(garden, "action") == "accept" && anyDestination)
             {
                 findings.Add(new("Critical", "Walled garden", "An IP walled-garden rule accepts traffic to any address before login.",
                     "Restrict IP walled-garden rules to specific addresses."));
@@ -228,10 +232,14 @@ public class RouterProvisioningService(
             }
         }
 
-        foreach (var service in (await List("ip/service")).Where(Enabled))
+        var services = (await List("ip/service"))
+            .Where(s => Enabled(s) && V(s, "dynamic") != "true")
+            .GroupBy(s => V(s, "name"))
+            .Select(g => g.First());
+        foreach (var service in services)
         {
             var name = V(service, "name");
-            var allowed = V(service, "address");
+            var allowed = service.ContainsKey("available-from") ? V(service, "available-from") : V(service, "address");
             if (name is "telnet" or "ftp")
             {
                 findings.Add(new("High", "Insecure service", $"{name} is enabled and sends passwords in clear text.", $"/ip service disable {name}"));
@@ -367,13 +375,50 @@ public class RouterProvisioningService(
             }
         }
 
-        var portalHost = new Uri(settings.PortalBaseUrl).Host;
+        var portalUri = new Uri(settings.PortalBaseUrl);
+        var portalHost = portalUri.Host;
+        var ipGardens = await client.ListAsync(connection, "ip/hotspot/walled-garden/ip", ct);
+        if (!ipGardens.Any(g => g["dst-host"]?.ToString() == portalHost && g["dst-port"]?.ToString() == portalUri.Port.ToString() &&
+                                g["action"]?.ToString() == "accept"))
+        {
+            changes.Add(new("ip/hotspot/walled-garden/ip", "add", null,
+                new()
+                {
+                    ["action"] = "accept", ["dst-host"] = portalHost, ["protocol"] = "tcp",
+                    ["dst-port"] = portalUri.Port.ToString(), ["comment"] = ManagedComment
+                }, null, $"Let customers reach the portal on TCP {portalUri.Port} before login"));
+        }
+
         var gardens = await client.ListAsync(connection, "ip/hotspot/walled-garden", ct);
         if (!gardens.Any(g => g["dst-host"]?.ToString() == portalHost))
         {
             changes.Add(new("ip/hotspot/walled-garden", "add", null,
                 new() { ["dst-host"] = portalHost, ["action"] = "allow", ["comment"] = ManagedComment }, null,
                 $"Allow the Kibo portal {portalHost} before login"));
+        }
+
+        if (server != null && router.Site != null)
+        {
+            var profileName = server["profile"]?.ToString() ?? "";
+            var profile = (await client.ListAsync(connection, "ip/hotspot/profile", ct)).FirstOrDefault(p => p["name"]?.ToString() == profileName);
+            var directory = profile?["html-directory"]?.ToString();
+            if (!string.IsNullOrEmpty(directory))
+            {
+                var fileName = $"{directory}/login.html";
+                var desiredPage = RouterScripts.LoginPage(router.Site, settings.PortalBaseUrl);
+                var existing = (await client.ListAsync(connection, "file", ct)).FirstOrDefault(f => f["name"]?.ToString() == fileName);
+                var current = existing?["contents"]?.ToString();
+                if (existing == null)
+                {
+                    changes.Add(new("file", "add", null, new() { ["name"] = fileName, ["contents"] = desiredPage }, null,
+                        $"Install the Kibo login page as {fileName}"));
+                }
+                else if (Normalize(current) != Normalize(desiredPage))
+                {
+                    changes.Add(new("file", "set", existing[".id"]?.ToString(), new() { ["contents"] = desiredPage },
+                        new() { ["contents"] = current ?? "" }, $"Replace {fileName} with the Kibo login page (the old page is kept for rollback)"));
+                }
+            }
         }
 
         var note = (await client.ReadAsync(connection, "system/note", ct))["note"]?.ToString() ?? "";
@@ -576,6 +621,8 @@ public class RouterProvisioningService(
 
         return actual == desired;
     }
+
+    private static string Normalize(string? text) => (text ?? "").Replace("\r\n", "\n").Trim();
 
     private static Dictionary<string, string> Previous(JsonObject current, Dictionary<string, string> diff) =>
         diff.Keys.ToDictionary(k => k, k => current[k]?.ToString() ?? "");

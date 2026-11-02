@@ -49,6 +49,13 @@ public class RadiusPacketTests
         Assert.Equal(expected, encrypted);
     }
 
+    [Theory]
+    [InlineData("32k/64k", "32000/64000")]
+    [InlineData("128k/256k", "128000/256000")]
+    [InlineData("2M/5M", "2000000/5000000")]
+    public void Rate_limits_map_to_routeros_queue_max_limit(string rate, string expected) =>
+        Assert.Equal(expected, Kibo.Web.Features.Sessions.SessionService.ToBitsPerSecond(rate));
+
     [Fact]
     public void Malformed_packets_are_rejected()
     {

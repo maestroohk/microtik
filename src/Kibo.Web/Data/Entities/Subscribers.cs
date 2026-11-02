@@ -65,6 +65,7 @@ public class AccessAccount : TenantEntity
     public AccessAccountKind Kind { get; set; }
     public string Username { get; set; } = "";
     public string Password { get; set; } = "";
+    public string RouterSecret { get; set; } = "";
     public AccessAccountStatus Status { get; set; } = AccessAccountStatus.Active;
     public string? StaticIpAddress { get; set; }
     public DateTime CreatedAt { get; set; }

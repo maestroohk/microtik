@@ -38,16 +38,18 @@
 
     protected override async Task OnInitializedAsync() => site = await Portal.LoadSiteAsync(Slug);
 
-    private void SubmitAsync()
+    private async Task SubmitAsync()
     {
         var code = Portal.NormalizeVoucherCode(Code);
-        if (code == null)
+        var account = code == null ? null : await Portal.FindVoucherAccountAsync(site!.Site.TenantId, code);
+        if (account == null)
         {
-            error = "That does not look like a voucher code. Check the letters and numbers on your ticket.";
+            error = "That voucher code is not valid here. Check the letters and numbers on your ticket.";
             return;
         }
 
-        var loginUrl = Portal.BuildRouterLoginUrl(Portal.ReadContext(HttpAccessor.HttpContext!), code, code, site!.TrustedLoginHosts);
+        var loginUrl = Portal.BuildRouterLoginUrl(Portal.ReadContext(HttpAccessor.HttpContext!), account.Username, account.RouterSecret,
+            site.TrustedLoginHosts);
         if (loginUrl == null)
         {
             error = "Reconnect to the WiFi network first, then open any website to get back to this page.";

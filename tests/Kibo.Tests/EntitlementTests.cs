@@ -29,6 +29,7 @@ public class EntitlementTests
         TenantId = package.TenantId,
         Username = "256772000111",
         Password = "123456",
+        RouterSecret = "router-only-secret",
         Kind = AccessAccountKind.Hotspot
     };
 
@@ -180,6 +181,7 @@ public class EntitlementTests
         var access = Entitlements.BuildRadiusAccess(account, subscription, new Tenant(), null, Now);
 
         Assert.Equal("2048k/4096k", access.RateLimit);
+        Assert.Equal("router-only-secret", access.Password);
         Assert.Equal(2, access.SimultaneousUse);
         Assert.Equal(subscription.ExpiresAt, access.ExpiresAt);
     }
@@ -201,6 +203,24 @@ public class EntitlementTests
     [InlineData("", 0)]
     public void RouterOs_durations_are_parsed(string value, long seconds) =>
         Assert.Equal(seconds, RouterOsClient.ParseDuration(value));
+
+    [Theory]
+    [InlineData("*1", true)]
+    [InlineData("*1A2F", true)]
+    [InlineData("1", false)]
+    [InlineData("*1/../../user", false)]
+    [InlineData("%2A1", false)]
+    public void RouterOs_item_ids_are_sent_unescaped_and_validated(string id, bool valid)
+    {
+        if (valid)
+        {
+            Assert.Equal(id, RouterOsClient.ItemId(id));
+        }
+        else
+        {
+            Assert.Throws<RouterOsException>(() => RouterOsClient.ItemId(id));
+        }
+    }
 
     [Fact]
     public void Router_check_backoff_is_bounded()

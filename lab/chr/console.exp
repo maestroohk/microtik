@@ -1,0 +1,23 @@
+log_user 0
+set timeout 60
+set command [lindex $argv 0]
+spawn telnet 127.0.0.1 5555
+sleep 1
+send "\r"
+expect {
+    -ex "Login:" {
+        send "admin\r"
+        expect -ex "Password:"
+        send "$env(CHR_ADMIN_PASSWORD)\r"
+        expect -re {\] > }
+    }
+    -re {\] > } {}
+}
+send "\r"
+expect -re {\] > }
+log_user 1
+send "$command\r"
+expect -re {\] > }
+log_user 0
+send "/quit\r"
+expect eof

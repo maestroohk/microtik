@@ -1,27 +1,41 @@
-set timeout 300
+log_user 0
+set timeout 240
 set address [lindex $argv 0]
 set gateway [lindex $argv 1]
 set admin $env(CHR_ADMIN_PASSWORD)
 set apiuser $env(CHR_API_USER)
 set apipass $env(CHR_API_PASSWORD)
+set prompt {\] > $}
+
+proc step {message} {
+    send_user "bootstrap: $message\n"
+}
 
 spawn telnet 127.0.0.1 5555
+sleep 2
 send "\r"
 expect {
-    "Login:" { send "admin\r" }
-    timeout { exit 1 }
+    -ex "Login:" {}
+    timeout { step "no login prompt"; exit 1 }
 }
-expect "Password:"
+send "admin\r"
+expect -ex "Password:"
 send "\r"
-expect {
-    -re {software license.*\[Y/n\]} { send "n\r"; exp_continue }
-    -re {new password>} { send "$admin\r"; exp_continue }
-    -re {repeat new password>} { send "$admin\r"; exp_continue }
-    -re {\] >} {}
-    timeout { exit 2 }
+step "logged in with the factory account"
+
+set changed 0
+while {1} {
+    expect {
+        -re {software license.*\[Y/n\]} { send "n\r" }
+        -ex "repeat new password>" { send "$admin\r"; set changed 1 }
+        -ex "new password>" { send "$admin\r" }
+        -re $prompt { break }
+        timeout { step "no shell prompt"; exit 2 }
+    }
 }
-sleep 1
-foreach command [list \
+step "password set: $changed"
+
+set commands [list \
     "/system identity set name=$env(CHR_NAME)" \
     "/ip dhcp-client remove \[find\]" \
     "/ip address add address=$address interface=ether1 comment=lab-wan" \
@@ -31,9 +45,17 @@ foreach command [list \
     "/user add name=$apiuser group=kibo-api password=$apipass" \
     "/user add name=lab-provisioner group=full password=$admin" \
     "/ip service set www disabled=no port=80" \
-    "/system ntp client set enabled=yes servers=$gateway" ] {
+    "/system ntp client set enabled=yes servers=$gateway" ]
+
+foreach command $commands {
     send "$command\r"
-    expect -re {\] >}
+    expect {
+        -re $prompt {}
+        timeout { step "timeout"; exit 3 }
+    }
+    sleep 1
 }
+
 send "/quit\r"
+step "done"
 expect eof

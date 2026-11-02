@@ -3,7 +3,7 @@ using Kibo.Web.Data.Entities;
 
 namespace Kibo.Web.Features.Routers;
 
-public record OnboardingSettings(string RadiusServerAddress, string PortalBaseUrl, string PortalHost, string ApiAllowedFrom);
+public record OnboardingSettings(string RadiusServerAddress, string PortalBaseUrl, string PortalHost, string ApiAllowedFrom, int PortalPort = 443);
 
 public static class RouterScripts
 {
@@ -32,7 +32,7 @@ public static class RouterScripts
         script.AppendLine();
         script.AppendLine("# 4. Walled garden: the portal and payment pages must load before login");
         script.AppendLine($"/ip hotspot walled-garden add dst-host={settings.PortalHost} comment=kibo-portal");
-        script.AppendLine($"/ip hotspot walled-garden add dst-host=*.{settings.PortalHost} comment=kibo-portal");
+        script.AppendLine($"/ip hotspot walled-garden ip add action=accept dst-host={settings.PortalHost} protocol=tcp dst-port={settings.PortalPort} comment=kibo-managed");
         script.AppendLine();
         script.AppendLine("# 5. PPPoE accounting through RADIUS (only if you sell PPPoE on this router)");
         script.AppendLine("/ppp aaa set use-radius=yes accounting=yes interim-update=1m");

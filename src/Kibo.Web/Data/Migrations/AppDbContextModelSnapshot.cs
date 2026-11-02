@@ -46,6 +46,11 @@ namespace Kibo.Web.Data.Migrations
                         .HasColumnType("text")
                         .HasColumnName("password");
 
+                    b.Property<string>("RouterSecret")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("router_secret");
+
                     b.Property<string>("StaticIpAddress")
                         .HasColumnType("text")
                         .HasColumnName("static_ip_address");

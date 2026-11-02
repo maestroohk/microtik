@@ -18,19 +18,32 @@ public class DynamicAuthorizationClient(ILogger<DynamicAuthorizationClient> logg
     private static readonly TimeSpan AttemptTimeout = TimeSpan.FromSeconds(3);
     private const int Attempts = 2;
 
-    public Task<DynamicAuthorizationResult> DisconnectAsync(Router router, string username, CancellationToken ct)
+    public Task<DynamicAuthorizationResult> DisconnectAsync(Router router, string username, string? framedIp, CancellationToken ct)
     {
         var request = new RadiusPacket { Code = RadiusCode.DisconnectRequest };
-        request.Add(RadiusAttr.UserName, username);
+        AddSessionIdentity(request, username, framedIp);
         return SendAsync(router, request, RadiusCode.DisconnectAck, ct);
     }
 
-    public Task<DynamicAuthorizationResult> ChangeRateAsync(Router router, string username, string rateLimit, CancellationToken ct)
+    public Task<DynamicAuthorizationResult> ChangeRateAsync(Router router, string username, string? framedIp, string rateLimit,
+        CancellationToken ct)
     {
         var request = new RadiusPacket { Code = RadiusCode.CoaRequest };
-        request.Add(RadiusAttr.UserName, username);
+        AddSessionIdentity(request, username, framedIp);
         request.AddVendor(RadiusAttr.MikrotikVendorId, RadiusAttr.MikrotikRateLimit, rateLimit);
         return SendAsync(router, request, RadiusCode.CoaAck, ct);
+    }
+
+    private static void AddSessionIdentity(RadiusPacket request, string username, string? framedIp)
+    {
+        if (IPAddress.TryParse(framedIp, out var address) && address.AddressFamily == AddressFamily.InterNetwork)
+        {
+            request.Add(RadiusAttr.FramedIpAddress, address);
+        }
+        else
+        {
+            request.Add(RadiusAttr.UserName, username);
+        }
     }
 
     private async Task<DynamicAuthorizationResult> SendAsync(Router router, RadiusPacket request, byte ackCode, CancellationToken ct)
