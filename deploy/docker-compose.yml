@@ -40,6 +40,8 @@ services:
     ports:
       - "127.0.0.1:51812:1812/udp"
       - "127.0.0.1:51813:1813/udp"
+      - "127.0.0.1:3799:3799/udp"
+      - "127.0.0.1:3800:3800/udp"
     networks:
       kibo-lab-wan:
         ipv4_address: 10.247.0.10
@@ -112,7 +114,7 @@ services:
     devices:
       - /dev/net/tun
     cpus: 1.0
-    mem_limit: 512m
+    mem_limit: 768m
     environment:
       CHR_VERSION: "7.25"
       CHR_NAME: lab-chr-1
@@ -169,22 +171,33 @@ services:
       - sh
       - -c
       - >
-        apk add --no-cache socat >/dev/null &&
+        apk add --no-cache socat >/dev/null;
         socat TCP-LISTEN:8031,fork,reuseaddr TCP:10.247.0.31:80 &
         socat TCP-LISTEN:8032,fork,reuseaddr TCP:10.247.0.32:80 &
-        socat UDP-LISTEN:3799,fork,reuseaddr UDP:10.247.0.31:3799 &
-        socat UDP-LISTEN:3800,fork,reuseaddr UDP:10.247.0.32:3800 &
         wait
     cpus: 0.25
     mem_limit: 64m
     ports:
       - "127.0.0.1:58731:8031"
       - "127.0.0.1:58732:8032"
-      - "127.0.0.1:3799:3799/udp"
-      - "127.0.0.1:3800:3800/udp"
     networks:
       kibo-lab-wan:
         ipv4_address: 10.247.0.40
+
+  coa-relay:
+    profiles: ["chr"]
+    image: alpine:3.20
+    network_mode: "service:freeradius"
+    command:
+      - sh
+      - -c
+      - >
+        apk add --no-cache socat >/dev/null;
+        socat UDP4-LISTEN:3799,fork,reuseaddr UDP4:10.247.0.31:3799 &
+        socat UDP4-LISTEN:3800,fork,reuseaddr UDP4:10.247.0.32:3800 &
+        wait
+    cpus: 0.25
+    mem_limit: 64m
 
 volumes:
   kibo-pgdata:

@@ -217,6 +217,11 @@ public class SubscriptionLifecycleWorker(IServiceScopeFactory scopeFactory, ILog
 
                 await lifecycle.ProcessBatchAsync(stoppingToken);
                 await lifecycle.RecordDevicesAsync(stoppingToken);
+                var requeued = await scope.ServiceProvider.GetRequiredService<Payments.PaymentService>().RequeueUnverifiedAsync(stoppingToken);
+                if (requeued > 0)
+                {
+                    logger.LogWarning("Re-queued verification for {Count} payments the provider has not confirmed", requeued);
+                }
                 if (DateTime.UtcNow.Minute == 0)
                 {
                     await lifecycle.PruneAccountingEvidenceAsync(TimeSpan.FromDays(90), stoppingToken);

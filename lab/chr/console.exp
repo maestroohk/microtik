@@ -1,14 +1,16 @@
 log_user 0
-set timeout 60
+set timeout 300
 set command [lindex $argv 0]
-spawn telnet 127.0.0.1 5555
+set port [expr {[info exists env(CONSOLE_PORT)] ? $env(CONSOLE_PORT) : 5555}]
+set password [expr {[info exists env(CONSOLE_PASSWORD)] ? $env(CONSOLE_PASSWORD) : $env(CHR_ADMIN_PASSWORD)}]
+spawn nc 127.0.0.1 $port
 sleep 1
 send "\r"
 expect {
     -ex "Login:" {
         send "admin\r"
         expect -ex "Password:"
-        send "$env(CHR_ADMIN_PASSWORD)\r"
+        send "$password\r"
         expect -re {\] > }
     }
     -re {\] > } {}
@@ -16,8 +18,9 @@ expect {
 send "\r"
 expect -re {\] > }
 log_user 1
-send "$command\r"
-expect -re {\] > }
+send "$command; :put (\"KIBO\" . \"_DONE\")\r"
+expect -ex "KIBO_DONE"
 log_user 0
+expect -re {\] > }
 send "/quit\r"
 expect eof

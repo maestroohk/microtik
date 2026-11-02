@@ -12,7 +12,7 @@ proc step {message} {
     send_user "bootstrap: $message\n"
 }
 
-spawn telnet 127.0.0.1 5555
+spawn nc 127.0.0.1 5555
 sleep 2
 send "\r"
 expect {

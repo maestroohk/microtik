@@ -1,0 +1,10 @@
+services:
+  wireguard:
+    networks:
+      backend:
+      kibo-lab-wan:
+        ipv4_address: 10.247.0.60
+
+networks:
+  kibo-lab-wan:
+    external: true

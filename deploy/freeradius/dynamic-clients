@@ -12,6 +12,7 @@ server dynamic_clients {
 				&FreeRADIUS-Client-Shortname = "%{sql: SELECT short_name FROM radius.nas WHERE nas_name = '%{Packet-Src-IP-Address}'}"
 				&FreeRADIUS-Client-Secret = "%{sql: SELECT secret FROM radius.nas WHERE nas_name = '%{Packet-Src-IP-Address}'}"
 				&FreeRADIUS-Client-NAS-Type = "other"
+				&FreeRADIUS-Client-Require-MA = yes
 				&FreeRADIUS-Client-Virtual-Server = "default"
 			}
 			ok

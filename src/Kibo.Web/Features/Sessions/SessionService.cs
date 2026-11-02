@@ -98,7 +98,8 @@ public class SessionService(
         try
         {
             var queues = await routerClient.ListAsync(healthChecker.ConnectionFor(router), "queue/simple", ct);
-            var queue = queues.FirstOrDefault(q => q["name"]?.ToString() == $"<hotspot-{username}>");
+            var queue = queues.FirstOrDefault(q => q["name"]?.ToString() is var name &&
+                                                   (name == $"<hotspot-{username}>" || name == $"<pppoe-{username}>"));
             return queue != null && queue["max-limit"]?.ToString() == ToBitsPerSecond(rateLimit);
         }
         catch (RouterOsException)

@@ -12,7 +12,9 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql/data
       - ./postgres/init:/docker-entrypoint-initdb.d:ro
-    networks: [backend]
+    networks:
+      backend:
+        aliases: [kibo-db]
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U kibo -d kibo"]
       interval: 10s
@@ -27,7 +29,7 @@ services:
         condition: service_healthy
     environment:
       KIBO_RADIUS_DB_PASSWORD: ${KIBO_RADIUS_DB_PASSWORD:?required}
-      KIBO_RADIUS_DB_HOST: postgres
+      KIBO_RADIUS_DB_HOST: kibo-db
       KIBO_RADIUS_CLIENT_NETWORK: ${KIBO_TUNNEL_SUBNET:?required}
     volumes:
       - ./freeradius:/kibo:ro
@@ -63,7 +65,8 @@ services:
         condition: service_healthy
     environment:
       ASPNETCORE_ENVIRONMENT: Production
-      ConnectionStrings__Kibo: Host=postgres;Database=kibo;Username=kibo;Password=${KIBO_DB_PASSWORD}
+      ASPNETCORE_URLS: http://+:8090
+      ConnectionStrings__Kibo: Host=kibo-db;Database=kibo;Username=kibo;Password=${KIBO_DB_PASSWORD}
       Payments__SimulatedMobileMoney__BaseUrl: ${KIBO_MOMO_BASE_URL:-}
       Payments__SimulatedMobileMoney__ApiKey: ${KIBO_MOMO_API_KEY:-}
       Payments__SimulatedMobileMoney__CallbackSigningSecret: ${KIBO_MOMO_CALLBACK_SECRET:-}
@@ -74,7 +77,8 @@ services:
       Kibo__TrustedProxies__0: 172.31.250.10
     volumes:
       - keys:/keys
-    networks: [backend]
+    # Shares the hub's network namespace so REST and CoA reach routers over their tunnels from the RADIUS address.
+    network_mode: "service:wireguard"
     stop_grace_period: 30s
 
   caddy:
@@ -83,7 +87,7 @@ services:
     ports:
       - "80:80"
       - "443:443"
-    command: ["caddy", "reverse-proxy", "--from", "${KIBO_PUBLIC_HOST}", "--to", "web:8080"]
+    command: ["caddy", "reverse-proxy", "--from", "${KIBO_PUBLIC_HOST}", "--to", "wireguard:8090"]
     volumes:
       - caddy:/data
     depends_on:

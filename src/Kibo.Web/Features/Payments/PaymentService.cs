@@ -156,6 +156,34 @@ public class PaymentService(
         return log.Outcome;
     }
 
+    public async Task<int> RequeueUnverifiedAsync(CancellationToken ct)
+    {
+        var now = clock.GetUtcNow().UtcDateTime;
+        var quietSince = now - TimeSpan.FromMinutes(2);
+        var horizon = now - TimeSpan.FromDays(2);
+        await using var db = kiboDb.ForSystem();
+        var stuck = await db.Payments
+            .Where(p => p.Status == PaymentStatus.Pending && p.ProviderReference != null && p.CreatedAt > horizon &&
+                        p.CreatedAt < quietSince && (p.LastVerifiedAt == null || p.LastVerifiedAt < quietSince))
+            .OrderBy(p => p.CreatedAt)
+            .Select(p => new { p.Id, p.TenantId })
+            .Take(100)
+            .ToListAsync(ct);
+
+        var queued = 0;
+        foreach (var payment in stuck)
+        {
+            if (await JobQueue.EnqueueUniqueAsync(db, JobKinds.VerifyPayment, new VerifyPaymentPayload(payment.Id), now,
+                    payment.TenantId, $"verify-payment:{payment.Id}", maxAttempts: 3))
+            {
+                queued++;
+            }
+        }
+
+        await db.SaveChangesAsync(ct);
+        return queued;
+    }
+
     public async Task VerifyAndSettleAsync(Guid paymentId, CancellationToken ct)
     {
         await using var db = kiboDb.ForSystem();

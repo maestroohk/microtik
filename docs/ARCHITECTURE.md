@@ -106,8 +106,12 @@ _Code-reviewed against RFC 2866; must be confirmed on CHR._
     (15–90 s); shorter means more RADIUS/database load.
   * `RouterCutoff`: the remaining bytes to the threshold are sent as `Mikrotik-Total-Limit`, so the router stops the
     session exactly at the threshold; the next login gets the reduced speed. Exact, but the customer reconnects once.
-* **Brute force:** 10 rejects from one device (Calling-Station-Id) at one router within 10 minutes lock that device out
-  for the rest of the window, whatever username it tries.
+* **Brute force:** 10 wrong passwords or unknown accounts from one device (Calling-Station-Id) at one router within
+  10 minutes lock that device out for the rest of the window, whatever username it tries. Kibo's own refusals
+  (lockout, expiry, suspension, device limit) are stored as `Policy-Reject` and never count, so a router that keeps
+  redialing is not locked out forever and reconnects as soon as the customer renews.
+* **RADIUS packet integrity:** every router client must send Message-Authenticator (BlastRADIUS, CVE-2024-3596).
+  PPPoE uses MS-CHAPv2 by default; FreeRADIUS's `mschap` module needs the Cleartext-Password Kibo supplies.
 
 ### Payments
 * Provider-independent `IPaymentProvider`. Only the simulated provider exists today.
@@ -119,6 +123,9 @@ _Code-reviewed against RFC 2866; must be confirmed on CHR._
   (covered by `DatabaseTests`).
 * `ledger_entries` is append-only (database trigger). Corrections are new entries (refunds, adjustments).
 * Provider secrets come from configuration (user-secrets in development, environment variables in production).
+* If the provider is unreachable, verification jobs retry and then stop, leaving the payment Pending (never paid).
+  The lifecycle worker re-queues verification for payments unconfirmed for 2 minutes, for up to two days, so a
+  customer who paid during an outage gets access once the provider answers.
 
 ### Router integration
 * Monitoring and session control use the **RouterOS v7 REST API** (`/rest`, HTTPS). Credentials are encrypted
@@ -145,6 +152,8 @@ _Code-reviewed against RFC 2866; must be confirmed on CHR._
   read as empty); item IDs (`*1`, files `**…`) must not be URL-escaped and are validated before use;
   `/system/license` returns `system-id` on CHR instead of `software-id`; `available-from` replaces `address` on
   `/ip/service` reads.
+* The hotspot controls IPv4 only. Advertising IPv6 on a hotspot LAN lets clients bypass it (shown on RouterOS 7.25);
+  the audit recommends removing the prefix or dropping forwarded IPv6 from the hotspot interface.
 * The `kibo-api` group (`read,write,api,rest-api,test`) can still write files; RouterOS has no narrower policy for
   the hotspot and RADIUS settings Kibo manages.
 * Health checks back off exponentially (30 s → 15 min) so dead routers cost little. Router-down vs platform-down
@@ -189,8 +198,10 @@ RouterOS API first and fall back to RADIUS Disconnect-Request. Packages with a f
 `Mikrotik-Total-Limit`, otherwise the router would cut the customer off instead of slowing them down.
 
 ## Deployment
-`deploy/docker-compose.prod.yml`: PostgreSQL, FreeRADIUS (sharing the WireGuard container's network namespace, so
-RADIUS is only reachable through router tunnels), a WireGuard hub (one peer per site), the web app image
+`deploy/docker-compose.prod.yml`: PostgreSQL (`kibo-db`), FreeRADIUS and the web app (both sharing the WireGuard
+container's network namespace, so RADIUS is only reachable through router tunnels and REST/CoA to routers leave from
+the hub's tunnel address, which is the RADIUS server address routers accept CoA from; the app listens on 8090 because
+the hub image uses 8080), a WireGuard hub (one peer per site), the web app image
 (`src/Kibo.Web/Dockerfile`, Tailwind built in a Node stage, runs as a non-root user, built-in health probe
 `--healthcheck`), and Caddy for automatic TLS on a fixed backend address that is the only trusted proxy.
 Settings: `deploy/.env.production.example`. Only 80/443 and WireGuard 51820/udp are published.
@@ -212,7 +223,11 @@ Settings: `deploy/.env.production.example`. Only 80/443 and WireGuard 51820/udp 
 containers on the isolated `kibo-lab-wan` network (10.247.0.0/24). Each container bridges its eth0 into the VM and
 gives the VM a second, internal hotspot LAN with network-namespace "phones" (`phone-voucher.sh` runs the full
 DHCP → redirect → portal → voucher → router login → internet check). First boot is configured over the serial
-console (`bootstrap.exp`, secrets from `deploy/.env`, console echo suppressed). Docker Desktop's bridge does not
+console (`bootstrap.exp`, secrets from `deploy/.env`, console echo suppressed; raw `nc`, because `telnet` sends CR LF
+and RouterOS takes the LF as a second answer). `ppp-client.sh` boots a throwaway RouterOS VM on the hotspot LAN
+as a PPPoE customer router. `coa-relay` runs in FreeRADIUS's network namespace so CoA from Kibo reaches the CHR
+from the RADIUS address. `docker-compose.wg-lab.yml` attaches the production WireGuard hub to the lab network for
+tunnel tests. Docker Desktop's bridge does not
 deliver the VM's ARP broadcasts, so `lab-arp.sh` pins the gateway, FreeRADIUS and file-server entries after every
 container start. `chr-gateway` forwards REST and CoA ports to 127.0.0.1 only. No host adapter, route, DNS or
 firewall setting is changed; there is no KVM, so each router uses most of one CPU core while running.
@@ -222,5 +237,4 @@ Non-secret settings: `appsettings*.json`. Secrets: `dotnet user-secrets` (develo
 Lab container secrets: `deploy/.env` (git-ignored; template in `deploy/.env.example`).
 
 ## Known gaps (tracked in PROGRESS.md)
-Real mobile money adapters; PPPoE, IPv6 and FastTrack behaviour not yet exercised on CHR; RouterOS 7.24.6 not
-bootstrapped; WireGuard peers not yet tested with a real router.
+Real mobile money adapters; FastTrack and IPv6 on hardware routers.

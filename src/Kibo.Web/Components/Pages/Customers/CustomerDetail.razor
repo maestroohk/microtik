@@ -244,7 +244,7 @@
                 @foreach (var a in detail.RecentAuth)
                 {
                     <li class="flex items-center justify-between px-5 py-2.5 text-[13px]">
-                        <span class="@(a.Reply == "Access-Accept" ? "text-ok" : "text-bad")">@(a.Reply == "Access-Accept" ? "Accepted" : "Rejected")</span>
+                        <span class="@(a.Reply == "Access-Accept" ? "text-ok" : "text-bad")">@(a.Reply switch { "Access-Accept" => "Accepted", "Policy-Reject" => "Refused (no valid plan, suspended or locked out)", _ => "Wrong code or password" })</span>
                         <span class="num text-[12px] text-muted">@a.CallingStationId</span>
                         <span class="text-muted">@Format.Ago(a.AuthDate, Now)</span>
                     </li>

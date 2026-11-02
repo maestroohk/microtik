@@ -1,6 +1,6 @@
 # Kibo progress
 
-_Last updated: 2026-11-02 (production smoke test)_
+_Last updated: 2026-11-02 (PPPoE, IPv6, WireGuard and drills round)_
 
 ## How to run it
 
@@ -42,9 +42,10 @@ database · **Reviewed** = code-reviewed only · **Not tested**.
 | Simultaneous use: second device refused | RouterOS | |
 | RADIUS outage: new logins fail clearly, live sessions continue, recovery | RouterOS | |
 | Usage confidence (Final / Live / Delayed / Router unreachable) on the customer page and accounting health page | Integration (classification), browser (badge) | Missing usage is never shown as a settled zero |
-| Device lockout after 10 rejects in 10 minutes | Reviewed | |
+| Device lockout after 10 wrong passwords in 10 minutes | RouterOS | Found and fixed: Kibo's own refusals (lockout, expiry, device limit) were counted as failures, so a CPE that kept redialing stayed locked out forever. They are now stored as `Policy-Reject`; after 40 refusals during an expiry, the renewed PPPoE customer reconnected within 4 s |
 | Fair use `RateChange`: dynamic queue holds the package rate; CoA by Framed-IP changes it to the fair-use rate | RouterOS | Sent with `radclient` from the configured RADIUS address |
-| Fair use: Kibo's own CoA packet reaching the router | **Not tested** | The lab forwarder changes the source address and RouterOS drops it; Kibo fell back to an API disconnect (RouterOS) and recorded 149 KB overshoot at a 30 s interval |
+| Fair use: Kibo's own CoA slows a live session without disconnecting it | RouterOS | Sent through a relay in FreeRADIUS's network namespace, so it leaves from the RADIUS address as it would through a tunnel. 256k to 64k, session kept running, "Acknowledged, queue verified", 576 KB overshoot at a 30 s interval |
+| Fair use: CoA from an address that is not the router's RADIUS server | RouterOS | Silently dropped; Kibo falls back to an API disconnect |
 | Fair use `RouterCutoff` | Integration | SQL sends the threshold as `Mikrotik-Total-Limit` |
 
 ### Bypass resistance
@@ -53,7 +54,10 @@ database · **Reviewed** = code-reviewed only · **Not tested**.
 | Printed access code typed into the router's own login page is refused (hidden router secret) | RouterOS | Portal login with the same code works |
 | Local hotspot user bypasses RADIUS (`radius=false`) and the audit flags it | RouterOS | |
 | Audit: MAC/trial login, bypassed bindings, open walled garden, extra RADIUS servers, CoA off, FastTrack, IPv6, telnet/ftp, unrestricted services, PPP secrets, old RouterOS | RouterOS (run on a real config, false positives fixed) | FastTrack and IPv6 findings come from configuration reads, not traffic tests |
-| IPv6 traffic bypass, DNS tunnelling through the walled garden, FastTrack counter loss | **Not tested** | |
+| IPv6 bypass | RouterOS | Confirmed: with an IPv6 prefix advertised on the hotspot LAN, a phone that never logged in was captive on IPv4 but reached an outside host over IPv6. `/ipv6 firewall filter add chain=forward in-interface=<hotspot> action=drop` closed it (also removes IPv6 for logged-in users) |
+| FastTrack | RouterOS (inconclusive) | With a FastTrack rule active, hotspot connections matched it but the fast path stayed at 0 bytes, the 64k limit held and accounting counted everything. The fast path never engaged on CHR, so hardware routers still need checking |
+| Voucher replayed from a second phone while the first is online | RouterOS | Refused (device limit), stored as `Policy-Reject` |
+| DNS tunnelling through the walled garden | **Not tested** | |
 | Router login URL bound to the site's registered hotspot hosts | Unit | Userinfo tricks rejected |
 | Portal rate limits behind hotspot NAT (per browser + per IP) | Simulator, browser | |
 
@@ -65,8 +69,9 @@ database · **Reviewed** = code-reviewed only · **Not tested**.
 | Rollback, including a partially failed rollback reported as such | RouterOS | |
 | REST quirks: Content-Length bodies, unescaped item IDs, `system-id`, `available-from` | RouterOS | All handled in `RouterOsClient` |
 | `kibo-api` group can write files | RouterOS | RouterOS least-privilege limit, documented |
-| PPPoE on CHR | **Not tested** | Simulator only (first round) |
-| RouterOS 7.24.6 (long-term) | **Not tested** | Boots; the serial bootstrap loses characters under emulation |
+| PPPoE on CHR (a second RouterOS VM dials as the customer router) | RouterOS | Found and fixed: every MS-CHAPv2 login (the RouterOS default) was rejected because FreeRADIUS 3.2 names the type `mschap`. Verified: login, `<pppoe-USER>` queue at the package rate, accounting within PPP framing of the queue counter (54.98 MB vs 53.94 MB), router ends the session at expiry (`Session-Timeout`), Kibo CoA 2M/4M with the queue check, Kibo disconnect (`NAS-Request`) |
+| RouterOS 7.24.6 (long-term) | RouterOS | Bootstrap fixed (the `telnet` client turned Enter into CR LF, which RouterOS read as a second, empty answer; the lab now uses raw `nc`). REST for both users, CHAP login with session timeout and queue, accounting with Class, CoA by Framed-IP |
+| WireGuard hub with a real router | RouterOS + production compose | CHR 7.25 peered with the production hub: handshake, REST over the tunnel, RADIUS from the tunnel address answered by production FreeRADIUS, hub Disconnect-Request accepted by the router |
 
 ### Application and deployment security
 | Item | Evidence | Notes |
@@ -79,16 +84,20 @@ database · **Reviewed** = code-reviewed only · **Not tested**.
 | Session survives a web restart and an image rebuild (persistent data-protection keys) | Production compose | |
 | Graceful shutdown | Production compose | Exit code 0 |
 | `pg_dump` / `pg_restore` round trip with RADIUS grants intact | Production compose | |
-| FreeRADIUS starts inside the WireGuard namespace and connects to PostgreSQL; the WireGuard hub generates peer configs | Production compose | No router has connected through a tunnel yet |
+| FreeRADIUS and the web app share the WireGuard namespace | Production compose | Found and fixed: the web app had no route to router tunnel addresses (REST and CoA could never reach a router); the hub image's CoreDNS already listens on 8080, so the app now uses 8090; `postgres` could resolve to another network's database, so the production database is `kibo-db` |
+| Router clients must send Message-Authenticator (BlastRADIUS) | RouterOS | FreeRADIUS flagged it; required for every dynamic client. RouterOS 7.25 and 7.24.6 and the simulator comply |
 | Renewal requests under duplicate workers (`FOR UPDATE SKIP LOCKED`) | Reviewed | |
-| Worker crash, payment provider outage, replay through the UI | **Not tested** | |
+| Worker crash: job left running with an expired lock | Live app | Reclaimed and completed |
+| Two app instances on one database | Live app | 200 jobs released at once: both instances worked, each job ran exactly once |
+| Payment provider outage | Integration | Found and fixed: after three failed checks a payment stayed Pending forever, so a customer who paid could never get access. Unconfirmed payments are now re-verified every few minutes for two days; settlement after recovery happens exactly once |
 | Dependencies | NuGet: no known vulnerabilities; npm audit: 0 | |
 
-Automated tests: **83 passing** (`dotnet test`, needs the lab PostgreSQL).
+Automated tests: **84 passing** (`dotnet test`, needs the lab PostgreSQL).
 
 Lab limitations: no KVM, so CHR runs under QEMU emulation (one core per router); Docker Desktop does not pass the
-VM's ARP broadcasts, so `lab/chr/lab-arp.sh` pins entries after each start; Kibo's CoA goes through a forwarder
-that RouterOS does not accept as its RADIUS server. Host: i7-13650HX, 39.6 GB RAM, WSL2; no host networking was
+VM's ARP broadcasts, so `lab/chr/lab-arp.sh` pins entries after each start (and after FreeRADIUS is recreated);
+Docker Desktop's kernel has no PPPoE module loaded, so the PPPoE customer is a second RouterOS VM
+(`lab/chr/ppp-client.sh`). Some lab subscriptions were adjusted with SQL to shorten tests. Host: i7-13650HX, 39.6 GB RAM, WSL2; no host networking was
 changed.
 
 ## Completed and tested (first round)
@@ -134,16 +143,16 @@ RADIUS codec (CoA vendor attributes, authenticators, PAP encryption).
   threshold matters.
 * Several sessions on one subscription share the remaining bytes by splitting; exact aggregate enforcement across
   sessions or routers is not claimed.
-* PPPoE, IPv6 bypass and FastTrack effects have not been exercised on RouterOS; 7.24.6 is not bootstrapped.
-* Kibo's own CoA has not reached a real router (lab limitation); `radclient` CoA from the RADIUS address works.
-* The simulated mobile money provider keeps transactions in memory; restarting it makes pending payments fail
-  safely.
+* IPv6 on a hotspot LAN bypasses the hotspot. Kibo's audit flags addresses on the hotspot interface, but not IPv6
+  that reaches the LAN from another router on the same segment.
+* FastTrack behaviour is unverified on hardware routers.
+* The device-limit refusal shows FreeRADIUS's own text ("You are already logged in - access denied").
+* The simulated mobile money provider keeps transactions in memory.
 * Platform admin tenant switching lasts for the browser tab's session only.
 
 ## Next steps
 
-1. Send Kibo's CoA from the RADIUS address in the lab (or over a WireGuard peer) and verify end-to-end throttling.
-2. PPPoE and IPv6 tests on CHR; FastTrack accounting comparison.
-3. Connect a CHR to the production WireGuard hub.
-4. MTN MoMo Collections and Airtel Money adapters behind `IPaymentProvider` (sandbox only).
-5. Worker-crash and provider-outage drills.
+1. MTN MoMo Collections and Airtel Money adapters behind `IPaymentProvider` (needs sandbox credentials).
+2. FastTrack and IPv6 checks on a hardware RouterOS device.
+3. Offer the IPv6 drop rule as an optional `kibo-managed` provisioning step.
+4. Kibo's own wording for the device-limit refusal.

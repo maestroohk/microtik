@@ -30,7 +30,9 @@ if (args.Contains("--healthcheck"))
     using var probe = new HttpClient { Timeout = TimeSpan.FromSeconds(4) };
     try
     {
-        using var response = await probe.GetAsync("http://127.0.0.1:8080/healthz");
+        var listen = (Environment.GetEnvironmentVariable("ASPNETCORE_URLS") ?? "http://+:8080").Split(';')[0];
+        var port = new Uri(listen.Replace("+", "localhost").Replace("*", "localhost").Replace("[::]", "localhost")).Port;
+        using var response = await probe.GetAsync($"http://127.0.0.1:{port}/healthz");
         return response.IsSuccessStatusCode ? 0 : 1;
     }
     catch (Exception)

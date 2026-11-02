@@ -190,6 +190,51 @@ public class DatabaseTests(TestDatabase database)
     }
 
     [Fact]
+    public async Task A_provider_outage_leaves_payments_pending_and_they_settle_once_it_recovers()
+    {
+        var (tenant, site, _) = await database.CreateTenantAsync("Oscar", "10.99.0.15");
+        Payment payment;
+        await using (var db = database.System())
+        {
+            var package = new Package
+            {
+                TenantId = tenant.Id, Name = "Day", Price = 1000, ValidityAmount = 1, ValidityUnit = ValidityUnit.Days,
+                DownloadKbps = 1024, UploadKbps = 512, CreatedAt = DateTime.UtcNow
+            };
+            payment = new Payment
+            {
+                TenantId = tenant.Id, SiteId = site.Id, PackageId = package.Id, Reference = $"O{Guid.NewGuid():N}"[..16],
+                Provider = "fake", ProviderReference = $"P{Guid.NewGuid():N}", PhoneNumber = "256772999002", Amount = 1000,
+                Status = PaymentStatus.Pending, PortalToken = Guid.NewGuid().ToString("N"), CreatedAt = DateTime.UtcNow.AddMinutes(-20),
+                ExpiresAt = DateTime.UtcNow.AddMinutes(-10)
+            };
+            db.AddRange(package, payment);
+            await db.SaveChangesAsync();
+        }
+
+        var down = new PaymentService(database.KiboDb(), [new UnavailableProvider()], TimeProvider.System, NullLogger<PaymentService>.Instance);
+        await Assert.ThrowsAsync<HttpRequestException>(() => down.VerifyAndSettleAsync(payment.Id, CancellationToken.None));
+        Assert.Equal(1, await down.RequeueUnverifiedAsync(CancellationToken.None));
+        Assert.Equal(0, await down.RequeueUnverifiedAsync(CancellationToken.None));
+
+        await using (var check = database.System())
+        {
+            Assert.Equal(PaymentStatus.Pending, (await check.Payments.FirstAsync(p => p.Id == payment.Id)).Status);
+            Assert.Equal(0, await check.Subscriptions.CountAsync(s => s.SourceReference == payment.Reference));
+        }
+
+        var recovered = new PaymentService(database.KiboDb(), [new FakeProvider(ProviderPaymentStatus.Succeeded, 1000)],
+            TimeProvider.System, NullLogger<PaymentService>.Instance);
+        await recovered.VerifyAndSettleAsync(payment.Id, CancellationToken.None);
+        await recovered.VerifyAndSettleAsync(payment.Id, CancellationToken.None);
+
+        await using var final = database.System();
+        Assert.Equal(PaymentStatus.Succeeded, (await final.Payments.FirstAsync(p => p.Id == payment.Id)).Status);
+        Assert.Equal(1, await final.Subscriptions.CountAsync(s => s.SourceReference == payment.Reference));
+        Assert.Equal(1, await final.LedgerEntries.CountAsync(l => l.PaymentId == payment.Id));
+    }
+
+    [Fact]
     public async Task Pending_or_declined_payments_never_create_access()
     {
         var (tenant, site, _) = await database.CreateTenantAsync("Kilo", "10.99.0.11");
@@ -291,6 +336,19 @@ public class DatabaseTests(TestDatabase database)
     }
 
     private record Evaluation(bool Allowed, string? Message, long? SessionTimeout, string? RateLimit, long? TotalLimit);
+
+    private class UnavailableProvider : IPaymentProvider
+    {
+        public string Name => "fake";
+
+        public Task<ProviderInitiation> InitiateAsync(string paymentReference, string phoneNumber, decimal amount, string currency,
+            string description, CancellationToken ct) => throw new HttpRequestException("Provider unavailable");
+
+        public Task<ProviderStatus> GetStatusAsync(string providerReference, CancellationToken ct) =>
+            throw new HttpRequestException("Provider unavailable");
+
+        public ProviderCallback? ParseAuthenticatedCallback(string body, IHeaderDictionary headers) => null;
+    }
 
     private class FakeProvider(ProviderPaymentStatus status, decimal amount) : IPaymentProvider
     {

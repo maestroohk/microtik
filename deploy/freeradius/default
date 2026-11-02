@@ -39,7 +39,7 @@ server default {
 		Auth-Type CHAP {
 			chap
 		}
-		Auth-Type MS-CHAP {
+		Auth-Type mschap {
 			mschap
 		}
 	}
@@ -63,6 +63,11 @@ server default {
 	post-auth {
 		sql
 		Post-Auth-Type REJECT {
+			if (&control:Auth-Type == Reject || &reply:Reply-Message =~ /already logged in/) {
+				update request {
+					&Tmp-String-1 := "Policy-Reject"
+				}
+			}
 			sql
 			attr_filter.access_reject
 		}
