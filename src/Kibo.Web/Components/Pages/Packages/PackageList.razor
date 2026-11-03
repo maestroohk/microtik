@@ -1,0 +1,63 @@
+@page "/packages"
+@attribute [Authorize]
+@using Kibo.Web.Features.Packages
+@inject PackageService Packages
+@inject CurrentUser CurrentUser
+@inject NavigationManager Navigation
+
+<PageHeader Title="Packages" Subtitle="What customers can buy. Price and limits are copied onto each purchase, so editing a package never changes what people already paid for.">
+    <Actions>
+        @if (CurrentUser.Can(Permissions.ManagePackages))
+        {
+            <a class="btn btn-primary" href="/packages/new"><Icon Name="plus" /> New package</a>
+        }
+    </Actions>
+</PageHeader>
+
+@if (packages == null)
+{
+    <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">@for (var i = 0; i < 3; i++) { <div class="skeleton h-40"></div> }</div>
+}
+else if (packages.Count == 0)
+{
+    <div class="card"><EmptyState Icon="package" Title="No packages yet" Text="Create an hourly, daily or monthly package to start selling."><a class="btn btn-primary" href="/packages/new">New package</a></EmptyState></div>
+}
+else
+{
+    @foreach (var group in packages.GroupBy(p => p.ServiceType))
+    {
+        <h2 class="eyebrow mb-3 mt-2">@(group.Key == ServiceType.Hotspot ? "Hotspot" : "PPPoE")</h2>
+        <div class="mb-8 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+            @foreach (var p in group)
+            {
+                <button class="card group p-5 text-left transition hover:border-line-strong @(p.IsActive ? "" : "opacity-60")" @onclick='() => Navigation.NavigateTo($"/packages/{p.Id}")'>
+                    <div class="flex items-start justify-between gap-3">
+                        <div>
+                            <div class="font-semibold">@p.Name</div>
+                            <div class="mt-0.5 text-[12.5px] text-muted">@p.Description</div>
+                        </div>
+                        <div class="num shrink-0 text-right text-[16px] font-semibold">@Format.Money(p.Price, p.Currency)</div>
+                    </div>
+                    <div class="mt-4 flex flex-wrap gap-1.5">
+                        <span class="badge">@PackageCatalog.DescribeValidity(p.ValidityAmount, p.ValidityUnit)</span>
+                        <span class="badge">@PackageCatalog.DescribeData(p.DataQuotaMegabytes)</span>
+                        <span class="badge">↓ @PackageCatalog.DescribeSpeed(p.DownloadKbps)</span>
+                        @if (p.MaxDevices > 1) { <span class="badge">@p.MaxDevices devices</span> }
+                        @if (p.AccessWindowStart != null) { <span class="badge badge-info">@p.AccessWindowStart?.ToString("HH:mm")–@p.AccessWindowEnd?.ToString("HH:mm")</span> }
+                        @if (p.ThrottledDownloadKbps != null) { <span class="badge badge-warn">FUP @PackageCatalog.DescribeSpeed(p.ThrottledDownloadKbps.Value)</span> }
+                        @if (p.IsPromotional) { <span class="badge badge-primary">Promo</span> }
+                        @if (!p.ShowOnPortal) { <span class="badge">Hidden from portal</span> }
+                        @if (!p.IsActive) { <span class="badge badge-bad">Inactive</span> }
+                    </div>
+                    <div class="mt-4 text-[12px] text-faint">Clock starts @(p.ValidityStart == ValidityStart.OnFirstLogin ? "at first login" : "at purchase")</div>
+                </button>
+            }
+        </div>
+    }
+}
+
+@code {
+    private List<Package>? packages;
+
+    protected override async Task OnInitializedAsync() => packages = await Packages.ListAsync();
+}

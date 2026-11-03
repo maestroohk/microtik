@@ -1,0 +1,268 @@
+@page "/packages/new"
+@page "/packages/{Id:guid}"
+@attribute [Authorize]
+@using Kibo.Web.Features.Packages
+@using Kibo.Web.Features.Sites
+@inject PackageService Packages
+@inject SiteService Sites
+@inject CurrentUser CurrentUser
+@inject NavigationManager Navigation
+
+<PageHeader Title="@(Id == null ? "New package" : form.Name)" Subtitle="Define exactly what the customer gets. Each limit is enforced by RADIUS on the router.">
+    <Breadcrumb><a class="hover:text-ink" href="/packages">Packages</a><Icon Name="chevron-right" Size="13" /><span>@(Id == null ? "New" : form.Name)</span></Breadcrumb>
+</PageHeader>
+
+@if (!loaded)
+{
+    <div class="skeleton h-[500px]"></div>
+    return;
+}
+
+<EditForm Model="form" OnValidSubmit="SaveAsync" class="grid gap-6 xl:grid-cols-[1fr_360px]">
+    <DataAnnotationsValidator />
+    <div class="min-w-0 space-y-6">
+        @if (error != null) { <Notice Kind="bad" Text="@error" /> }
+        <ValidationSummary class="text-[13px] text-bad" />
+
+        <section class="card">
+            <div class="card-header"><div class="card-title">Basics</div></div>
+            <div class="grid gap-5 p-5 sm:grid-cols-2">
+                <div>
+                    <label class="label" for="pname">Name</label>
+                    <InputText id="pname" class="input" @bind-Value="form.Name" placeholder="Daily 1GB" />
+                </div>
+                <div>
+                    <label class="label" for="pprice">Price (@currency)</label>
+                    <InputNumber id="pprice" class="input num" @bind-Value="form.Price" />
+                </div>
+                <div class="sm:col-span-2">
+                    <label class="label" for="pdesc">Short description</label>
+                    <InputText id="pdesc" class="input" @bind-Value="form.Description" placeholder="24 hours, 1 GB" />
+                </div>
+                <div>
+                    <label class="label" for="ptype">Service</label>
+                    <InputSelect id="ptype" class="input" @bind-Value="form.ServiceType">
+                        <option value="@ServiceType.Hotspot">Hotspot</option>
+                        <option value="@ServiceType.Pppoe">PPPoE</option>
+                    </InputSelect>
+                </div>
+                <div>
+                    <label class="label" for="psite">Available at</label>
+                    <InputSelect id="psite" class="input" @bind-Value="form.SiteId">
+                        <option value="">All sites</option>
+                        @foreach (var s in sites) { <option value="@s.Id">@s.Name</option> }
+                    </InputSelect>
+                </div>
+            </div>
+        </section>
+
+        <section class="card">
+            <div class="card-header">
+                <div>
+                    <div class="card-title">Validity</div>
+                    <div class="text-[12px] text-muted">Calendar time from the start point. It keeps running while the customer is offline.</div>
+                </div>
+            </div>
+            <div class="grid gap-5 p-5 sm:grid-cols-3">
+                <div>
+                    <label class="label" for="vamt">Length</label>
+                    <InputNumber id="vamt" class="input num" @bind-Value="form.ValidityAmount" />
+                </div>
+                <div>
+                    <label class="label" for="vunit">Unit</label>
+                    <InputSelect id="vunit" class="input" @bind-Value="form.ValidityUnit">
+                        <option value="@ValidityUnit.Minutes">Minutes</option>
+                        <option value="@ValidityUnit.Hours">Hours</option>
+                        <option value="@ValidityUnit.Days">Days</option>
+                        <option value="@ValidityUnit.CalendarMonths">Calendar months</option>
+                    </InputSelect>
+                </div>
+                <div>
+                    <label class="label" for="vstart">Clock starts</label>
+                    <InputSelect id="vstart" class="input" @bind-Value="form.ValidityStart">
+                        <option value="@ValidityStart.OnFirstLogin">At first login</option>
+                        <option value="@ValidityStart.OnPurchase">At purchase</option>
+                    </InputSelect>
+                </div>
+                @if (form.ValidityStart == ValidityStart.OnFirstLogin)
+                {
+                    <div>
+                        <label class="label" for="vdead">Must be used within (days)</label>
+                        <InputNumber id="vdead" class="input num" @bind-Value="form.ActivationDeadlineDays" />
+                        <p class="hint">Unused purchases expire after this.</p>
+                    </div>
+                }
+                <div>
+                    <label class="label" for="vgrace">Grace after expiry (minutes)</label>
+                    <InputNumber id="vgrace" class="input num" @bind-Value="form.GraceMinutes" />
+                    <p class="hint">Mostly for PPPoE renewals.</p>
+                </div>
+            </div>
+        </section>
+
+        <section class="card">
+            <div class="card-header">
+                <div>
+                    <div class="card-title">Allowances</div>
+                    <div class="text-[12px] text-muted">Leave a field empty for no limit. Whichever limit is reached first ends the package.</div>
+                </div>
+            </div>
+            <div class="grid gap-5 p-5 sm:grid-cols-3">
+                <div>
+                    <label class="label" for="adata">Data (MB, upload + download)</label>
+                    <InputNumber id="adata" class="input num" @bind-Value="form.DataQuotaMegabytes" placeholder="Unlimited" />
+                </div>
+                <div>
+                    <label class="label" for="atime">Online time (minutes, total)</label>
+                    <InputNumber id="atime" class="input num" @bind-Value="form.TimeQuotaMinutes" placeholder="Unlimited" />
+                    <p class="hint">Counts only time connected.</p>
+                </div>
+                <div>
+                    <label class="label" for="asess">Longest single session (minutes)</label>
+                    <InputNumber id="asess" class="input num" @bind-Value="form.MaxSessionMinutes" placeholder="No limit" />
+                    <p class="hint">Customer logs in again after this.</p>
+                </div>
+                <div>
+                    <label class="label" for="adev">Devices at once</label>
+                    <InputNumber id="adev" class="input num" @bind-Value="form.MaxDevices" />
+                </div>
+            </div>
+        </section>
+
+        <section class="card">
+            <div class="card-header"><div class="card-title">Speed</div></div>
+            <div class="grid gap-5 p-5 sm:grid-cols-2">
+                <div>
+                    <label class="label" for="sdown">Download (kbps, 0 = uncapped)</label>
+                    <InputNumber id="sdown" class="input num" @bind-Value="form.DownloadKbps" />
+                </div>
+                <div>
+                    <label class="label" for="sup">Upload (kbps)</label>
+                    <InputNumber id="sup" class="input num" @bind-Value="form.UploadKbps" />
+                </div>
+                <div>
+                    <label class="label" for="fdown">After data allowance: download (kbps)</label>
+                    <InputNumber id="fdown" class="input num" @bind-Value="form.ThrottledDownloadKbps" placeholder="Cut off" />
+                    <p class="hint">Fair use. Empty means access stops when data runs out.</p>
+                </div>
+                <div>
+                    <label class="label" for="fup">After data allowance: upload (kbps)</label>
+                    <InputNumber id="fup" class="input num" @bind-Value="form.ThrottledUploadKbps" placeholder="Cut off" />
+                </div>
+            </div>
+        </section>
+
+        <section class="card">
+            <div class="card-header">
+                <div>
+                    <div class="card-title">Schedule and promotion</div>
+                    <div class="text-[12px] text-muted">Times are in the operator's time zone (Africa/Kampala).</div>
+                </div>
+            </div>
+            <div class="grid gap-5 p-5 sm:grid-cols-2">
+                <div>
+                    <label class="label" for="wstart">Usable from (time of day)</label>
+                    <input id="wstart" type="time" class="input num" value="@form.AccessWindowStart?.ToString("HH:mm")" @onchange="e => form.AccessWindowStart = ParseTime(e)" />
+                </div>
+                <div>
+                    <label class="label" for="wend">Usable until</label>
+                    <input id="wend" type="time" class="input num" value="@form.AccessWindowEnd?.ToString("HH:mm")" @onchange="e => form.AccessWindowEnd = ParseTime(e)" />
+                    <p class="hint">For night bundles, e.g. 22:00 to 06:00.</p>
+                </div>
+                <div>
+                    <label class="label" for="pfrom">On sale from</label>
+                    <InputDate id="pfrom" Type="InputDateType.DateTimeLocal" class="input" @bind-Value="form.AvailableFrom" />
+                </div>
+                <div>
+                    <label class="label" for="puntil">On sale until</label>
+                    <InputDate id="puntil" Type="InputDateType.DateTimeLocal" class="input" @bind-Value="form.AvailableUntil" />
+                </div>
+                <div class="flex flex-wrap gap-x-6 gap-y-3 sm:col-span-2">
+                    <label class="flex items-center gap-2 text-[13px]"><InputCheckbox class="size-4" @bind-Value="form.IsPromotional" /> Mark as an offer</label>
+                    <label class="flex items-center gap-2 text-[13px]"><InputCheckbox class="size-4" @bind-Value="form.ShowOnPortal" /> Show on the captive portal</label>
+                    <label class="flex items-center gap-2 text-[13px]"><InputCheckbox class="size-4" @bind-Value="form.IsRecurring" /> Renews monthly (PPPoE)</label>
+                    <label class="flex items-center gap-2 text-[13px]"><InputCheckbox class="size-4" @bind-Value="form.IsActive" /> Active</label>
+                </div>
+            </div>
+        </section>
+    </div>
+
+    <aside>
+        <div class="space-y-4 xl:sticky xl:top-20">
+            <div class="card p-5">
+                <div class="eyebrow">Portal preview</div>
+                <div class="mt-3 rounded-2xl border border-line bg-bg p-4">
+                    <div class="flex items-center gap-3">
+                        <div class="min-w-0 flex-1">
+                            <div class="font-semibold">@(string.IsNullOrWhiteSpace(form.Name) ? "Package name" : form.Name)</div>
+                            <div class="mt-1 text-[12.5px] text-muted">
+                                @PackageCatalog.DescribeValidity(form.ValidityAmount, form.ValidityUnit) · @PackageCatalog.DescribeData(form.DataQuotaMegabytes) · @PackageCatalog.DescribeSpeed(form.DownloadKbps)
+                            </div>
+                        </div>
+                        <div class="num text-[18px] font-semibold">@form.Price.ToString("#,0")</div>
+                    </div>
+                </div>
+                <div class="eyebrow mt-5">What RADIUS sends the router</div>
+                <dl class="mt-2 space-y-1.5 text-[12.5px]">
+                    <div class="flex justify-between gap-3"><dt class="text-muted">Mikrotik-Rate-Limit</dt><dd class="num">@(RatePreview == "" ? "none" : RatePreview)</dd></div>
+                    <div class="flex justify-between gap-3"><dt class="text-muted">Session-Timeout</dt><dd class="num">remaining validity@(form.MaxSessionMinutes != null ? $", max {form.MaxSessionMinutes} min" : "")</dd></div>
+                    <div class="flex justify-between gap-3"><dt class="text-muted">Mikrotik-Total-Limit</dt><dd class="num">@(form.DataQuotaMegabytes == null ? "none" : "remaining bytes")</dd></div>
+                    <div class="flex justify-between gap-3"><dt class="text-muted">Simultaneous-Use</dt><dd class="num">@form.MaxDevices</dd></div>
+                </dl>
+                @if (CurrentUser.Can(Permissions.ManagePackages))
+                {
+                    <button type="submit" class="btn btn-primary mt-5 w-full" disabled="@saving">@(saving ? "Saving…" : "Save package")</button>
+                }
+            </div>
+        </div>
+    </aside>
+</EditForm>
+
+@code {
+    [Parameter] public Guid? Id { get; set; }
+
+    private PackageForm form = new();
+    private List<Site> sites = [];
+    private string currency = "UGX";
+    private bool loaded;
+    private bool saving;
+    private string? error;
+
+    private string RatePreview => Kibo.Web.Features.Subscriptions.Entitlements.RateLimit(form.UploadKbps, form.DownloadKbps);
+
+    protected override async Task OnInitializedAsync()
+    {
+        sites = await Sites.ListAsync();
+        if (Id != null)
+        {
+            var package = await Packages.GetAsync(Id.Value);
+            if (package == null)
+            {
+                Navigation.NavigateTo("/packages");
+                return;
+            }
+
+            form = PackageForm.From(package);
+            currency = package.Currency;
+        }
+
+        loaded = true;
+    }
+
+    private static TimeOnly? ParseTime(ChangeEventArgs e) =>
+        TimeOnly.TryParse(e.Value?.ToString(), out var time) ? time : null;
+
+    private async Task SaveAsync()
+    {
+        saving = true;
+        var result = await Packages.SaveAsync(Id, form);
+        saving = false;
+        if (!result.Succeeded)
+        {
+            error = result.Error;
+            return;
+        }
+
+        Navigation.NavigateTo("/packages");
+    }
+}
