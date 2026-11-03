@@ -137,7 +137,8 @@ _Code-reviewed against RFC 2866; must be confirmed on CHR._
 * **Provisioning is plan → approve → backup → apply → verify → roll back.** Kibo only adds items commented
   `kibo-managed` or sets the specific properties shown in the plan (RADIUS client, `radius incoming`, hotspot
   profile RADIUS/accounting/login methods, portal walled-garden host plus an IP walled-garden entry for the portal
-  port (without it the portal is unreachable before login on RouterOS 7.25), `login.html`, PPP AAA, the claim note). Firewall, NAT,
+  port (without it the portal is unreachable before login on RouterOS 7.25), `login.html`, PPP AAA, the claim note, and, when the hotspot interface carries IPv6, a forward drop rule for IPv6
+  from that interface placed before the operator's own forward rules). Firewall, NAT,
   DHCP, routing, VLANs and users are never touched. A plan older than 15 minutes must be recreated. An `/export`
   backup is stored encrypted before applying. After applying, the plan is recomputed; any remaining difference
   rolls back every step in reverse. RouterOS has no transactions, so a rollback can itself fail; that state is

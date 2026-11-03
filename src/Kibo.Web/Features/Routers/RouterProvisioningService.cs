@@ -421,6 +421,16 @@ public class RouterProvisioningService(
             }
         }
 
+        if (server != null)
+        {
+            var hotspotInterface = server["interface"]?.ToString() ?? "";
+            var change = await Ipv6BypassChangeAsync(connection, hotspotInterface, ct);
+            if (change != null)
+            {
+                changes.Add(change);
+            }
+        }
+
         var note = (await client.ReadAsync(connection, "system/note", ct))["note"]?.ToString() ?? "";
         if (!note.Contains(ClaimNote(router)))
         {
@@ -440,6 +450,43 @@ public class RouterProvisioningService(
         }
 
         return changes;
+    }
+
+    private async Task<PlannedChange?> Ipv6BypassChangeAsync(RouterConnection connection, string hotspotInterface, CancellationToken ct)
+    {
+        List<JsonObject> addresses;
+        List<JsonObject> filters;
+        try
+        {
+            addresses = await client.ListAsync(connection, "ipv6/address", ct);
+            filters = await client.ListAsync(connection, "ipv6/firewall/filter", ct);
+        }
+        catch (RouterOsException)
+        {
+            return null;
+        }
+
+        var exposed = addresses.Any(a => a["interface"]?.ToString() == hotspotInterface && a["disabled"]?.ToString() != "true" &&
+                                         !(a["address"]?.ToString() ?? "").StartsWith("fe80", StringComparison.OrdinalIgnoreCase));
+        var blocked = filters.Any(f => f["comment"]?.ToString() == ManagedComment && f["chain"]?.ToString() == "forward" &&
+                                       f["in-interface"]?.ToString() == hotspotInterface && f["action"]?.ToString() == "drop");
+        if (!exposed || blocked)
+        {
+            return null;
+        }
+
+        var rule = new Dictionary<string, string>
+        {
+            ["chain"] = "forward", ["in-interface"] = hotspotInterface, ["action"] = "drop", ["comment"] = ManagedComment
+        };
+        var first = filters.FirstOrDefault(f => f["chain"]?.ToString() == "forward" && f["dynamic"]?.ToString() != "true");
+        if (first?[".id"]?.ToString() is { } firstId)
+        {
+            rule["place-before"] = firstId;
+        }
+
+        return new("ipv6/firewall/filter", "add", null, rule, null,
+            $"Block forwarded IPv6 from hotspot interface {hotspotInterface}: the hotspot only controls IPv4, so clients could reach the internet over IPv6 without logging in (logged-in customers also lose IPv6)");
     }
 
     public async Task<OperationResult<ProvisioningOperation>> ApplyAsync(long operationId, CancellationToken ct = default)

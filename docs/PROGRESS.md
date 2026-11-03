@@ -54,9 +54,9 @@ database · **Reviewed** = code-reviewed only · **Not tested**.
 | Printed access code typed into the router's own login page is refused (hidden router secret) | RouterOS | Portal login with the same code works |
 | Local hotspot user bypasses RADIUS (`radius=false`) and the audit flags it | RouterOS | |
 | Audit: MAC/trial login, bypassed bindings, open walled garden, extra RADIUS servers, CoA off, FastTrack, IPv6, telnet/ftp, unrestricted services, PPP secrets, old RouterOS | RouterOS (run on a real config, false positives fixed) | FastTrack and IPv6 findings come from configuration reads, not traffic tests |
-| IPv6 bypass | RouterOS | Confirmed: with an IPv6 prefix advertised on the hotspot LAN, a phone that never logged in was captive on IPv4 but reached an outside host over IPv6. `/ipv6 firewall filter add chain=forward in-interface=<hotspot> action=drop` closed it (also removes IPv6 for logged-in users) |
+| IPv6 bypass | RouterOS | Confirmed: with an IPv6 prefix advertised on the hotspot LAN, a phone that never logged in was captive on IPv4 but reached an outside host over IPv6. `/ipv6 firewall filter add chain=forward in-interface=<hotspot> action=drop` closed it (also removes IPv6 for logged-in users). Kibo's provisioning plan now proposes that rule (`kibo-managed`) when the hotspot interface has a non-link-local IPv6 address; planned, applied and verified through the UI, and the bypass was blocked with the rule on and open with it off |
 | FastTrack | RouterOS (inconclusive) | With a FastTrack rule active, hotspot connections matched it but the fast path stayed at 0 bytes, the 64k limit held and accounting counted everything. The fast path never engaged on CHR, so hardware routers still need checking |
-| Voucher replayed from a second phone while the first is online | RouterOS | Refused (device limit), stored as `Policy-Reject` |
+| Voucher replayed from a second phone while the first is online | RouterOS | Refused (device limit) with Kibo's own message, stored as `Policy-Reject` |
 | DNS tunnelling through the walled garden | **Not tested** | |
 | Router login URL bound to the site's registered hotspot hosts | Unit | Userinfo tricks rejected |
 | Portal rate limits behind hotspot NAT (per browser + per IP) | Simulator, browser | |
@@ -146,7 +146,6 @@ RADIUS codec (CoA vendor attributes, authenticators, PAP encryption).
 * IPv6 on a hotspot LAN bypasses the hotspot. Kibo's audit flags addresses on the hotspot interface, but not IPv6
   that reaches the LAN from another router on the same segment.
 * FastTrack behaviour is unverified on hardware routers.
-* The device-limit refusal shows FreeRADIUS's own text ("You are already logged in - access denied").
 * The simulated mobile money provider keeps transactions in memory.
 * Platform admin tenant switching lasts for the browser tab's session only.
 
@@ -154,5 +153,4 @@ RADIUS codec (CoA vendor attributes, authenticators, PAP encryption).
 
 1. MTN MoMo Collections and Airtel Money adapters behind `IPaymentProvider` (needs sandbox credentials).
 2. FastTrack and IPv6 checks on a hardware RouterOS device.
-3. Offer the IPv6 drop rule as an optional `kibo-managed` provisioning step.
-4. Kibo's own wording for the device-limit refusal.
+3. DNS-tunnelling test through the walled garden.

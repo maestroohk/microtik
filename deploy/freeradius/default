@@ -63,7 +63,15 @@ server default {
 	post-auth {
 		sql
 		Post-Auth-Type REJECT {
-			if (&control:Auth-Type == Reject || &reply:Reply-Message =~ /already logged in/) {
+			if (&reply:Reply-Message =~ /already logged in/) {
+				update reply {
+					&Reply-Message := "This plan is already in use on its maximum number of devices. Disconnect one of them and try again."
+				}
+				update request {
+					&Tmp-String-1 := "Policy-Reject"
+				}
+			}
+			elsif (&control:Auth-Type == Reject) {
 				update request {
 					&Tmp-String-1 := "Policy-Reject"
 				}
