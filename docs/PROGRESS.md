@@ -4,24 +4,7 @@ _Last updated: 2026-11-02 (PPPoE, IPv6, WireGuard and drills round)_
 
 ## How to run it
 
-```bash
-cd deploy && cp .env.example .env   # fill every value with `openssl rand -hex 16`
-docker compose up -d                  # Postgres, FreeRADIUS, two RouterOS simulators (lab network 10.247.0.0/24)
-cd ../src/Kibo.Web && npm install && dotnet run --launch-profile http   # http://localhost:5290
-```
-
-Development secrets live in `dotnet user-secrets` (connection string, seed passwords, lab secrets, payment
-simulator keys) — see `docs/ARCHITECTURE.md`. The simulator must be published once before `docker compose up`:
-`dotnet publish src/Kibo.Lab -c Release -o lab/sim-publish`.
-
-| Address | What |
-|---|---|
-| http://localhost:5290 | Operator dashboard (seeded owner `owner@kampala-connect.test`, admin `admin@kibo.test`; passwords in `deploy/.env`) |
-| http://localhost:5290/p/kampala-connect-ntinda | Captive portal for the Ntinda site |
-| http://localhost:58721 | Lab simulator 1 (phones, hotspot login, PPPoE dial, reboot, mobile money approval) |
-| 127.0.0.1:55432 | PostgreSQL · 127.0.0.1:51812-51813/udp FreeRADIUS |
-
-All ports bind to 127.0.0.1. The lab uses its own Docker network and does not touch host networking or routers.
+See [README.md](../README.md) (Windows setup, lab, tests, CHR lab).
 
 ## Hardening round (2026-11-02): status by evidence
 
