@@ -1,7 +1,8 @@
 #!/bin/sh
 set -e
 RADDB=/etc/freeradius
-cp /kibo/clients.conf "$RADDB/clients.conf"
+: > "$RADDB/clients.conf"
+rm -f "$RADDB/sites-enabled/inner-tunnel" "$RADDB/mods-enabled/eap"
 cp /kibo/sql "$RADDB/mods-enabled/sql"
 cp /kibo/queries.conf "$RADDB/mods-config/sql/main/postgresql/kibo-queries.conf"
 cp /kibo/default "$RADDB/sites-enabled/default"

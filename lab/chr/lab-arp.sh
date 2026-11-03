@@ -14,8 +14,13 @@ mac_of_container() {
 
 gateway_mac=$(docker run --rm --network kibo-lab-wan alpine:3.20 sh -c "ping -c1 -W1 10.247.0.1 >/dev/null; ip neigh show 10.247.0.1" | awk '{print $5}')
 
-for pair in "10.247.0.1 $gateway_mac" "10.247.0.10 $(mac_of_container kibo-lab-freeradius-1)" "10.247.0.50 $(mac_of_container kibo-lab-lab-files-1)"; do
-    set -- $pair
+pairs="10.247.0.1=$gateway_mac 10.247.0.10=$(mac_of_container kibo-lab-freeradius-1) 10.247.0.50=$(mac_of_container kibo-lab-lab-files-1)"
+if docker inspect kibo-lab-lab-dns-1 >/dev/null 2>&1; then
+    pairs="$pairs 10.247.0.53=$(mac_of_container kibo-lab-lab-dns-1)"
+fi
+
+for pair in $pairs; do
+    set -- ${pair%%=*} ${pair#*=}
     for id in $(curl -s -u "$AUTH" "$API/ip/arp?address=$1" | grep -o '"\.id":"[^"]*"' | cut -d'"' -f4); do
         curl -s -g -u "$AUTH" -X DELETE "$API/ip/arp/$id" >/dev/null
     done

@@ -174,7 +174,7 @@ public class RouterProvisioningService(
         foreach (var garden in (await List("ip/hotspot/walled-garden")).Where(g => V(g, "dynamic") != "true"))
         {
             var host = V(garden, "dst-host");
-            var unrestricted = host is "*" or "*.*" ||
+            var unrestricted = IsBroadWalledGardenHost(host) ||
                                (host == "" && V(garden, "dst-address") == "" && V(garden, "path") == "" && V(garden, "dst-port") == "");
             if (Enabled(garden) && V(garden, "action") != "deny" && unrestricted)
             {
@@ -216,7 +216,14 @@ public class RouterProvisioningService(
         {
         }
 
-        foreach (var rule in (await List("ip/firewall/filter")).Where(r => V(r, "action") == "fasttrack-connection" && Enabled(r)))
+        var filters = await List("ip/firewall/filter");
+        if ((await List("ip/hotspot")).Any(Enabled) && !LimitsDnsBeforeLogin(filters))
+        {
+            findings.Add(new("High", "DNS before login", "Devices that have not logged in can send unlimited DNS lookups through the router, which is enough to tunnel internet traffic over DNS without paying (about 150 lookups a second on RouterOS 7.25).",
+                $"/ip firewall filter add chain=pre-hs-input protocol=udp dst-port={HotspotDnsPort} hotspot=!auth dst-limit={UnauthenticatedDnsLimit} action=return; /ip firewall filter add chain=pre-hs-input protocol=udp dst-port={HotspotDnsPort} hotspot=!auth action=drop"));
+        }
+
+        foreach (var rule in filters.Where(r => V(r, "action") == "fasttrack-connection" && Enabled(r)))
         {
             findings.Add(new("High", "FastTrack", "A FastTrack rule is active. Fast-tracked connections skip queues, so hotspot speed limits may not apply to them.",
                 "Exclude hotspot traffic from FastTrack or disable the rule; verify per-user limits afterwards."));
@@ -429,6 +436,8 @@ public class RouterProvisioningService(
             {
                 changes.Add(change);
             }
+
+            changes.AddRange(DnsLimitChanges(await client.ListAsync(connection, "ip/firewall/filter", ct)));
         }
 
         var note = (await client.ReadAsync(connection, "system/note", ct))["note"]?.ToString() ?? "";
@@ -447,6 +456,65 @@ public class RouterProvisioningService(
             {
                 changes.Add(new("ppp/aaa", "set", null, aaaDiff, Previous(aaa, aaaDiff), "Authenticate PPPoE through RADIUS"));
             }
+        }
+
+        return changes;
+    }
+
+    public static bool IsBroadWalledGardenHost(string host) =>
+        host.Contains('*') && host.Split('.', StringSplitOptions.RemoveEmptyEntries).Count(label => !label.Contains('*')) < 2;
+
+    public const string HotspotDnsPort = "64872";
+    public const string UnauthenticatedDnsLimit = "5/1s,30,src-address/1m";
+
+    private static Dictionary<string, string> DnsRule(string protocol, string action)
+    {
+        var rule = new Dictionary<string, string>
+        {
+            ["chain"] = "pre-hs-input", ["protocol"] = protocol, ["dst-port"] = HotspotDnsPort, ["hotspot"] = "!auth",
+            ["action"] = action, ["comment"] = ManagedComment
+        };
+        if (action == "return")
+        {
+            rule["dst-limit"] = UnauthenticatedDnsLimit;
+        }
+
+        return rule;
+    }
+
+    private static bool IsDnsRule(JsonObject rule, string protocol, string action) =>
+        rule["chain"]?.ToString() == "pre-hs-input" && rule["protocol"]?.ToString() == protocol &&
+        rule["dst-port"]?.ToString() == HotspotDnsPort && rule["hotspot"]?.ToString() == "!auth" && rule["action"]?.ToString() == action &&
+        rule["disabled"]?.ToString() != "true" && (action != "return" || !string.IsNullOrEmpty(rule["dst-limit"]?.ToString()));
+
+    public static bool LimitsDnsBeforeLogin(IEnumerable<JsonObject> filters) => filters.Any(f => IsDnsRule(f, "udp", "drop"));
+
+    public static List<PlannedChange> DnsLimitChanges(IReadOnlyList<JsonObject> filters)
+    {
+        var changes = new List<PlannedChange>();
+        var firstDrop = filters.FirstOrDefault(f => IsDnsRule(f, "udp", "drop") || IsDnsRule(f, "tcp", "drop"))?[".id"]?.ToString();
+        if (!filters.Any(f => IsDnsRule(f, "udp", "return")))
+        {
+            var rule = DnsRule("udp", "return");
+            if (firstDrop != null)
+            {
+                rule["place-before"] = firstDrop;
+            }
+
+            changes.Add(new("ip/firewall/filter", "add", null, rule, null,
+                "Let devices that have not logged in make up to 5 DNS lookups a second (burst 30), enough for the portal"));
+        }
+
+        if (!filters.Any(f => IsDnsRule(f, "udp", "drop")))
+        {
+            changes.Add(new("ip/firewall/filter", "add", null, DnsRule("udp", "drop"), null,
+                "Drop DNS above that rate before login, so the router cannot be used as a DNS tunnel for free internet"));
+        }
+
+        if (!filters.Any(f => IsDnsRule(f, "tcp", "drop")))
+        {
+            changes.Add(new("ip/firewall/filter", "add", null, DnsRule("tcp", "drop"), null,
+                "Drop DNS over TCP before login (not needed to reach the portal)"));
         }
 
         return changes;

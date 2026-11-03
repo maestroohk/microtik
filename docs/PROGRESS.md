@@ -1,6 +1,6 @@
 # Kibo progress
 
-_Last updated: 2026-11-02 (PPPoE, IPv6, WireGuard and drills round)_
+_Last updated: 2026-11-03 (DNS tunnelling, walled garden and FreeRADIUS surface)_
 
 ## How to run it
 
@@ -40,7 +40,9 @@ database · **Reviewed** = code-reviewed only · **Not tested**.
 | IPv6 bypass | RouterOS | Confirmed: with an IPv6 prefix advertised on the hotspot LAN, a phone that never logged in was captive on IPv4 but reached an outside host over IPv6. `/ipv6 firewall filter add chain=forward in-interface=<hotspot> action=drop` closed it (also removes IPv6 for logged-in users). Kibo's provisioning plan now proposes that rule (`kibo-managed`) when the hotspot interface has a non-link-local IPv6 address; planned, applied and verified through the UI, and the bypass was blocked with the rule on and open with it off |
 | FastTrack | RouterOS (inconclusive) | With a FastTrack rule active, hotspot connections matched it but the fast path stayed at 0 bytes, the 64k limit held and accounting counted everything. The fast path never engaged on CHR, so hardware routers still need checking |
 | Voucher replayed from a second phone while the first is online | RouterOS | Refused (device limit) with Kibo's own message, stored as `Policy-Reject` |
-| DNS tunnelling through the walled garden | **Not tested** | |
+| DNS tunnelling before login | RouterOS | Found: the hotspot redirects every DNS query to the router's resolver (UDP 64872), which forwarded 300 unique tunnel-style names upstream in 2 s for a phone that had not logged in. Kibo's audit now flags it and the provisioning plan adds three `kibo-managed` rules in `pre-hs-input` (5 lookups/s per device, burst 30, then drop; no TCP DNS before login). Applied and verified through the UI: a 20 s flood of 680 names let 81 through, the portal still loads before login, logged-in users are not limited. A slow tunnel (about 5 lookups/s) remains possible |
+| Walled-garden wildcards that open a whole domain (`*.com`, `*com`) | Unit | Flagged as critical alongside `*` |
+| FreeRADIUS attack surface | RouterOS (regression) | Removed the stock `localhost` client (its secret reused the database password, and in production anything in the shared namespace could act as a router), the EAP module and the `inner-tunnel` listener on 127.0.0.1:18120. Only 1812/1813 remain; RouterOS login and simulator accounting still work |
 | Router login URL bound to the site's registered hotspot hosts | Unit | Userinfo tricks rejected |
 | Portal rate limits behind hotspot NAT (per browser + per IP) | Simulator, browser | |
 
@@ -75,7 +77,7 @@ database · **Reviewed** = code-reviewed only · **Not tested**.
 | Payment provider outage | Integration | Found and fixed: after three failed checks a payment stayed Pending forever, so a customer who paid could never get access. Unconfirmed payments are now re-verified every few minutes for two days; settlement after recovery happens exactly once |
 | Dependencies | NuGet: no known vulnerabilities; npm audit: 0 | |
 
-Automated tests: **84 passing** (`dotnet test`, needs the lab PostgreSQL).
+Automated tests: **95 passing** (`dotnet test`, needs the lab PostgreSQL).
 
 Lab limitations: no KVM, so CHR runs under QEMU emulation (one core per router); Docker Desktop does not pass the
 VM's ARP broadcasts, so `lab/chr/lab-arp.sh` pins entries after each start (and after FreeRADIUS is recreated);
@@ -136,4 +138,4 @@ RADIUS codec (CoA vendor attributes, authenticators, PAP encryption).
 
 1. MTN MoMo Collections and Airtel Money adapters behind `IPaymentProvider` (needs sandbox credentials).
 2. FastTrack and IPv6 checks on a hardware RouterOS device.
-3. DNS-tunnelling test through the walled garden.
+3. Per-domain DNS policy before login (only portal and payment hosts resolvable) if the 5 lookups/s residual matters.

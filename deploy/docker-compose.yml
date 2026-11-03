@@ -164,6 +164,16 @@ services:
       kibo-lab-wan:
         ipv4_address: 10.247.0.50
 
+  lab-dns:
+    profiles: ["chr"]
+    image: alpine:3.20
+    command: ["sh", "-c", "apk add --no-cache dnsmasq >/dev/null; exec dnsmasq --no-daemon --log-queries --log-facility=- --no-resolv --server=10.247.0.1 --local=/tunnel.kibo.test/"]
+    cpus: 0.25
+    mem_limit: 64m
+    networks:
+      kibo-lab-wan:
+        ipv4_address: 10.247.0.53
+
   chr-gateway:
     profiles: ["chr"]
     image: alpine:3.20

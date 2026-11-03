@@ -110,6 +110,8 @@ _Code-reviewed against RFC 2866; must be confirmed on CHR._
   10 minutes lock that device out for the rest of the window, whatever username it tries. Kibo's own refusals
   (lockout, expiry, suspension, device limit) are stored as `Policy-Reject` and never count, so a router that keeps
   redialing is not locked out forever and reconnects as soon as the customer renews.
+* **FreeRADIUS surface:** only the Kibo site and dynamic clients are enabled; the stock localhost client, EAP and the
+  `inner-tunnel` listener are removed at start-up.
 * **RADIUS packet integrity:** every router client must send Message-Authenticator (BlastRADIUS, CVE-2024-3596).
   PPPoE uses MS-CHAPv2 by default; FreeRADIUS's `mschap` module needs the Cleartext-Password Kibo supplies.
 
@@ -137,7 +139,7 @@ _Code-reviewed against RFC 2866; must be confirmed on CHR._
 * **Provisioning is plan → approve → backup → apply → verify → roll back.** Kibo only adds items commented
   `kibo-managed` or sets the specific properties shown in the plan (RADIUS client, `radius incoming`, hotspot
   profile RADIUS/accounting/login methods, portal walled-garden host plus an IP walled-garden entry for the portal
-  port (without it the portal is unreachable before login on RouterOS 7.25), `login.html`, PPP AAA, the claim note, and, when the hotspot interface carries IPv6, a forward drop rule for IPv6
+  port (without it the portal is unreachable before login on RouterOS 7.25), DNS limits before login (below), `login.html`, PPP AAA, the claim note, and, when the hotspot interface carries IPv6, a forward drop rule for IPv6
   from that interface placed before the operator's own forward rules). Firewall, NAT,
   DHCP, routing, VLANs and users are never touched. A plan older than 15 minutes must be recreated. An `/export`
   backup is stored encrypted before applying. After applying, the plan is recomputed; any remaining difference
@@ -153,6 +155,10 @@ _Code-reviewed against RFC 2866; must be confirmed on CHR._
   read as empty); item IDs (`*1`, files `**…`) must not be URL-escaped and are validated before use;
   `/system/license` returns `system-id` on CHR instead of `software-id`; `available-from` replaces `address` on
   `/ip/service` reads.
+* **DNS before login.** The hotspot redirects all client DNS to the router's resolver on UDP/TCP 64872 and answers it
+  before login, so an unauthenticated device can tunnel traffic through DNS. Kibo adds `kibo-managed` rules to the
+  `pre-hs-input` chain (evaluated before the hotspot's own accepts): `hotspot=!auth` DNS is allowed at 5 lookups/s
+  per device (burst 30) and dropped above that; DNS over TCP is dropped before login.
 * The hotspot controls IPv4 only. Advertising IPv6 on a hotspot LAN lets clients bypass it (shown on RouterOS 7.25);
   the audit recommends removing the prefix or dropping forwarded IPv6 from the hotspot interface.
 * The `kibo-api` group (`read,write,api,rest-api,test`) can still write files; RouterOS has no narrower policy for
@@ -228,7 +234,7 @@ console (`bootstrap.exp`, secrets from `deploy/.env`, console echo suppressed; r
 and RouterOS takes the LF as a second answer). `ppp-client.sh` boots a throwaway RouterOS VM on the hotspot LAN
 as a PPPoE customer router. `coa-relay` runs in FreeRADIUS's network namespace so CoA from Kibo reaches the CHR
 from the RADIUS address. `docker-compose.wg-lab.yml` attaches the production WireGuard hub to the lab network for
-tunnel tests. Docker Desktop's bridge does not
+tunnel tests. `lab-dns` (10.247.0.53) is a logging DNS server for measuring what a router forwards upstream. Docker Desktop's bridge does not
 deliver the VM's ARP broadcasts, so `lab-arp.sh` pins the gateway, FreeRADIUS and file-server entries after every
 container start. `chr-gateway` forwards REST and CoA ports to 127.0.0.1 only. No host adapter, route, DNS or
 firewall setting is changed; there is no KVM, so each router uses most of one CPU core while running.
